@@ -55,7 +55,8 @@ except Exception:
 
 
 class StrictResult:
-    __slots__ = ('status', 'trees', 'visited', 'fail_pos', 'fail_reason', 'fail_path')
+    __slots__ = ('status', 'trees', 'visited', 'fail_pos', 'fail_reason', 'fail_path',
+                 'named_mode')
 
     def __init__(self, status, trees, visited, fail_pos=-1, fail_reason='', fail_path=()):
         self.status = status          # 'unique' | 'ambiguous' | 'failed' | 'budget'
@@ -64,9 +65,26 @@ class StrictResult:
         self.fail_pos = fail_pos      # 탐색이 가장 멀리 도달한 실패 오프셋
         self.fail_reason = fail_reason
         self.fail_path = fail_path    # 그 지점의 필드 경로
+        self.named_mode = False       # fallback(이름있는 배열원소 허용)으로 풀렸는가
 
 
-def parse_strict(raw, node_budget=300000):
+def parse_strict(raw, node_budget=2_000_000):
+    """2-pass 백트래킹: 1차는 실측 규칙(배열 09 = bare 문자열)만으로 탐색.
+
+    실패할 때만 2차로 '이름 있는 배열 원소' 해석을 추가 허용한다 — 짝수 개
+    문자열 배열에서 두 해석이 모두 경계를 맞춰 모호 판정이 폭주하는 것을 막고,
+    실측 증거(bare 문자열)가 우선하도록.
+    """
+    res = _parse_pass(raw, node_budget, named_elems=False)
+    if res.status in ('failed', 'budget'):
+        res2 = _parse_pass(raw, node_budget, named_elems=True)
+        if res2.status in ('unique', 'ambiguous'):
+            res2.named_mode = True
+            return res2
+    return res
+
+
+def _parse_pass(raw, node_budget, named_elems):
     """백트래킹 전수 탐색. 경계(n-4)에서 정확히 끝나는 해만 인정."""
     end = len(raw) - TRAILER_LEN
     if raw[:4] != MAGIC or end <= 4:
@@ -83,12 +101,22 @@ def parse_strict(raw, node_budget=300000):
     def gen_value(i, subtype, named):
         if subtype in SCALARS:
             fmt, size = SCALARS[subtype]
+            if not named and size == 1 and not named_elems:
+                # 배열 bare 1바이트 스칼라 (기본 pass): payload 후보 바이트가
+                # 유효한 원소 시작(0x00~0x0b)이면 '0 생략 마커'로 확정.
+                # 연속 드롭아웃(02 02)이 "int8 값 2" 해석과 모호해지는 것을
+                # 결정 규칙으로 차단 — 실측상 배열 1바이트 태그는 0 표기뿐.
+                if i < end and raw[i] <= TAG_STRUCT:
+                    yield 0, i
+                elif i + size <= end:
+                    yield struct.unpack(fmt, raw[i:i + size])[0], i + size
+                return
             if i + size <= end:                   # 분기 A: payload 존재
                 yield struct.unpack(fmt, raw[i:i + size])[0], i + size
-            elif not named:
-                note(i, f'payload({size}B)가 경계(n-4)를 넘음')
-            if named:                             # 분기 B: 생략(값 0/FALSE)
-                yield (False if subtype == TAG_BOOL else 0), i
+            # 분기 B: 생략(값 0/FALSE) — 이름 있는 필드뿐 아니라 배열의 bare
+            # 원소에도 실측 관측됨 (es_values 의 0 드롭아웃: 02 뒤 payload 없음).
+            # 잘못된 생략 분기는 payload 첫 바이트가 유효 태그가 아닐 때 즉사한다.
+            yield (False if subtype == TAG_BOOL else 0), i
         elif subtype == TAG_STRING:
             j = raw.find(0, i, end)
             if j != -1:
@@ -102,89 +130,116 @@ def parse_strict(raw, node_budget=300000):
         else:
             note(i - 1, f'미지 SubType 0x{subtype:02x}')
 
-    def gen_struct(i):
-        items = []
+    def _string_elem_alts(i, j):
+        """fallback 모드의 0x09 배열 원소: bare 문자열(우선) + 이름있는 원소."""
+        yield raw[i + 1:j].decode('utf-8', 'replace'), j + 1
+        name = raw[i + 1:j].decode()
+        for val, k2 in gen_value(j + 2, raw[j + 1], named=True):
+            yield {name: val}, k2
 
-        def rec(i):
+    def gen_container(i0, is_struct):
+        """struct/array 본문을 원소 단위 '반복 + 명시적 백트래킹'으로 파싱.
+
+        원소마다 재귀하면 7천 원소 배열에서 파이썬 재귀 한계를 뚫는다.
+        대신 원소별 대안 이터레이터 스택(iters)을 들고 반복 진행하며,
+        막히면 가장 최근 원소의 다음 대안으로 되감는다. 재귀는 중첩
+        (struct 안의 array 등) 깊이에만 쌓인다.
+        """
+        items, iters, labels = [], [], []
+        i = i0
+
+        def backtrack():
+            nonlocal i
+            while iters:
+                path.append(labels[-1])
+                nxt = next(iters[-1], None)       # 마지막 원소의 다음 대안
+                path.pop()
+                if nxt is not None:
+                    items[-1] = (items[-1][0], nxt[0]) if is_struct else nxt[0]
+                    i = nxt[1]
+                    return True
+                iters.pop()
+                items.pop()
+                labels.pop()
+            return False
+
+        while True:
             if budget[0] <= 0:
                 return
             budget[0] -= 1
             if i >= end:
                 note(i, 'END(00) 없이 경계 도달 — 컨테이너 미폐쇄')
-                return
-            t = raw[i]
-            if t == TAG_END:
-                yield dict(items), i + 1
-                return
-            if t != TAG_STRING:
-                note(i, f'구조체에서 이름마커(09)/END(00) 기대, 0x{t:02x} 발견')
-                return
-            j = raw.find(0, i + 1, end)
-            if j == -1:
-                note(i + 1, '필드명의 NUL 종결자 없음')
-                return
-            nm = raw[i + 1:j]
-            if not NAME_RE.match(nm):
-                note(i + 1, f'유효하지 않은 필드명 {nm[:24]!r}')
-                return
-            k = j + 1
-            if k >= end:
-                note(k, 'SubType 자리에서 경계 도달')
-                return
-            name = nm.decode()
-            path.append(name)
-            for val, k2 in gen_value(k + 1, raw[k], named=True):
-                items.append((name, val))
-                saved = path.pop()                # 형제 파싱은 부모 경로에서
-                yield from rec(k2)
-                path.append(saved)
-                items.pop()
-            path.pop()
-
-        yield from rec(i)
-
-    def gen_array(i):
-        items = []
-
-        def rec(i):
-            if budget[0] <= 0:
-                return
-            budget[0] -= 1
-            if i >= end:
-                note(i, 'END(00) 없이 경계 도달 — 배열 미폐쇄')
-                return
-            t = raw[i]
-            if t == TAG_END:
-                yield list(items), i + 1
-                return
-            path.append(f'[{len(items)}]')
-            if t == TAG_STRING:                   # 이름 있는 원소 {name: value}
-                j = raw.find(0, i + 1, end)
-                if j == -1 or not NAME_RE.match(raw[i + 1:j]):
-                    note(i + 1, '배열의 이름있는 원소 이름 불량')
-                    path.pop()
+                if not backtrack():
                     return
+                continue
+            t = raw[i]
+            if t == TAG_END:
+                yield (dict(items) if is_struct else list(items)), i + 1
+                if not backtrack():               # 다른 해 계속 탐색
+                    return
+                continue
+
+            if is_struct:
+                if t != TAG_STRING:
+                    note(i, f'구조체에서 이름마커(09)/END(00) 기대, 0x{t:02x} 발견')
+                    if not backtrack():
+                        return
+                    continue
+                j = raw.find(0, i + 1, end)
+                if j == -1:
+                    note(i + 1, '필드명의 NUL 종결자 없음')
+                    if not backtrack():
+                        return
+                    continue
+                nm = raw[i + 1:j]
+                if not NAME_RE.match(nm):
+                    note(i + 1, f'유효하지 않은 필드명 {nm[:24]!r}')
+                    if not backtrack():
+                        return
+                    continue
                 k = j + 1
                 if k >= end:
-                    path.pop()
-                    return
-                name = raw[i + 1:j].decode()
-                for val, k2 in gen_value(k + 1, raw[k], named=True):
-                    items.append({name: val})
-                    saved = path.pop()
-                    yield from rec(k2)
-                    path.append(saved)
-                    items.pop()
+                    note(k, 'SubType 자리에서 경계 도달')
+                    if not backtrack():
+                        return
+                    continue
+                name = nm.decode()
+                label = name
+                it = gen_value(k + 1, raw[k], named=True)
+            elif t == TAG_STRING:
+                j = raw.find(0, i + 1, end)
+                if j == -1:
+                    note(i + 1, '배열 문자열 원소의 NUL 종결자 없음')
+                    if not backtrack():
+                        return
+                    continue
+                label = f'[{len(items)}]'
+                if named_elems and NAME_RE.match(raw[i + 1:j]) and j + 1 < end:
+                    it = _string_elem_alts(i, j)
+                else:
+                    # 실측 기본: bare 문자열 값 원소 (단일 분기)
+                    it = iter(((raw[i + 1:j].decode('utf-8', 'replace'), j + 1),))
             else:                                 # 타입태그 + 값 원소
-                for val, k2 in gen_value(i + 1, t, named=False):
-                    items.append(val)
-                    saved = path.pop()
-                    yield from rec(k2)
-                    path.append(saved)
-                    items.pop()
-            path.pop()
+                label = f'[{len(items)}]'
+                it = gen_value(i + 1, t, named=False)
 
-        yield from rec(i)
+            path.append(label)
+            first = next(it, None)
+            path.pop()
+            if first is None:
+                if not backtrack():
+                    return
+                continue
+            items.append((name, first[0]) if is_struct else first[0])
+            iters.append(it)
+            labels.append(label)
+            i = first[1]
+
+    def gen_struct(i):
+        yield from gen_container(i, True)
+
+    def gen_array(i):
+        yield from gen_container(i, False)
 
     start = 5 if raw[4] == TAG_STRUCT else 4
     solutions = []
@@ -309,8 +364,9 @@ def advise(res, checksum_ok):
 def diagnose(name, raw, res, verbose=False):
     """문제 파일 하나에 대한 진단 블록 출력."""
     checksum_ok = dd_main.dd_trailer_ok(raw)
+    mode = ' (fallback: 이름있는 배열원소 허용)' if res.named_mode else ''
     print(f'\n┌─ 진단: {name}')
-    print(f'│ 상태: {res.status}   체크섬: {"일치 ✓" if checksum_ok else "불일치 ✗"}   '
+    print(f'│ 상태: {res.status}{mode}   체크섬: {"일치 ✓" if checksum_ok else "불일치 ✗"}   '
           f'크기: {len(raw):,}B   탐색노드: {res.visited}')
 
     if res.status in ('failed', 'budget') and res.fail_pos >= 0:
@@ -368,6 +424,7 @@ def main():
     checksum_bad = []
     mismatch = []          # (name, raw, strict_tree)
     problems = []          # (name, raw, res)
+    fallback_used = []     # 이름있는 배열원소 fallback 으로만 풀린 파일
 
     total = 0
     for name, raw in iter_dd(args.paths, args.raw):
@@ -379,6 +436,8 @@ def main():
 
         res = parse_strict(raw)
         stats[res.status] += 1
+        if res.named_mode:
+            fallback_used.append(name)
         if res.status == 'unique':
             heur_tree, _, _ = dd_main.parse_tlv(raw)
             if heur_tree != res.trees[0]:
@@ -394,6 +453,10 @@ def main():
     print(f'  구조 오류 (해 없음)           : {stats["failed"]}개')
     print(f'  탐색 예산 초과                : {stats["budget"]}개')
     print(f'  휴리스틱 ≠ 유일해 (휴리스틱 오류): {len(mismatch)}개')
+
+    if fallback_used:
+        print(f'  (참고) 이름있는 배열원소 fallback 필요: {len(fallback_used)}개 '
+              f'— 스펙 §1.6 의 bare 규칙에 예외가 존재한다는 뜻, 파일 공유 바람')
 
     if total and stats['unique'] == total and not mismatch:
         print('\n결론: 전 파일이 유일해로 확정 — 현재 휴리스틱 파서의 출력과 100% 일치.')

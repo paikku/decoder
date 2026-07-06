@@ -188,12 +188,17 @@ class TLVParser:
         return f'<?0x{subtype:02x}>'
 
     def _read_array(self):
-        """배열: END(0x00) 까지 값들을 읽는다.
+        """배열: END(0x00) 까지 'SubType + Value' 원소들을 읽는다.
 
-        원소가 'SubType + Value' 형태인지, 'Name + SubType + Value' 형태인지
-        데이터에 따라 다를 수 있어 관대하게 처리:
-          - 다음 바이트가 STRING(0x09) 이면 이름있는 멤버(struct 유사)
-          - 아니면 타입태그로 보고 값만 읽음
+        실측 정정 (2026-07-06, DD_FORMAT_SPEC.md §1.6):
+          - 0x09 원소는 bare '문자열 값'이다 (이름 있는 멤버가 아님!).
+            valid_values = [TRUE, TRUE, ...] 같은 문자열 배열이 실존하며,
+            과거의 '이름있는 원소 {name: value}' 해석은 원소를 둘씩 짝지어
+            먹는 오독이었다 (짝수 개면 조용히 잘못 파싱되던 버그).
+          - 스칼라 원소도 0값이면 payload 가 통째로 생략된다 (es_values 의
+            0 드롭아웃: ... 05 23 3d | 02 | 05 19 19 ...  ← 02 뒤 payload 없음).
+            payload 로 읽었을 때 그 다음 바이트가 유효한 원소 시작(0x00~0x0b)이
+            아니면 생략으로 판정한다.
         """
         arr = []
         while self.i < self.end:
@@ -202,16 +207,32 @@ class TLVParser:
                 self.i += 1
                 break
             if t == TAG_STRING:
-                # 이름있는 원소 → 단일 멤버 dict
+                # bare 문자열 값 원소
                 self.i += 1
-                name, self.i = _read_cstr(self.raw, self.i)
-                subtype = self.raw[self.i] if self.i < self.end else TAG_END
-                self.i += 1
-                arr.append({name: self._read_value(subtype)})
-            else:
-                # 타입 태그 + 값
-                self.i += 1
-                arr.append(self._read_value(t))
+                s, self.i = _read_cstr(self.raw, self.i)
+                arr.append(s)
+                continue
+            # 타입 태그 + 값 (스칼라는 0값 payload 생략 가능)
+            self.i += 1
+            width = None
+            if t in SCALAR_FMT:
+                width = SCALAR_FMT[t][1]
+            elif t == TAG_BOOL:
+                width = 4
+            if width == 1:
+                # 1바이트 스칼라: payload 후보 바이트 자체가 유효한 원소 시작
+                # (0x00~0x0b)이면 '0 생략 마커'로 확정. 연속 드롭아웃(02 02)을
+                # "int8 값 2"로 오독하는 모호성을 없애는 결정 규칙 —
+                # 실측상 배열의 1바이트 태그는 0 표기로만 관측됨.
+                if self.i >= self.end or self.raw[self.i] <= TAG_STRUCT:
+                    arr.append(0)
+                    continue
+            elif width is not None:
+                nxt = self.i + width
+                if nxt > self.end or self.raw[nxt] > TAG_STRUCT:
+                    arr.append(False if t == TAG_BOOL else 0)   # 생략 → 0
+                    continue
+            arr.append(self._read_value(t))
         return arr
 
 
