@@ -346,6 +346,26 @@ def _read_key_at(raw, i):
 TRAILER_LEN = 4
 
 
+def trailer_checksum(raw):
+    """트레일러 체크섬 계산 (2026-07-06 실측 확정, DD_FORMAT_SPEC.md §1.5).
+
+    base-17 곱셈 롤링 해시: h = h*17 + byte (mod 2^32).
+    범위는 매직 포함 raw[0:n-4], big-endian 4바이트로 저장된다.
+    (표준 CRC 계열이 아님 — trailer_solve.py 로 역산)
+    """
+    h = 0
+    for byte in raw[:-TRAILER_LEN]:
+        h = (h * 17 + byte) & 0xFFFFFFFF
+    return h
+
+
+def dd_trailer_ok(raw):
+    """.dd 끝 4바이트가 본문 체크섬과 일치하는지 검증"""
+    if len(raw) <= TRAILER_LEN:
+        return False
+    return trailer_checksum(raw) == int.from_bytes(raw[-TRAILER_LEN:], 'big')
+
+
 def extract_skeleton(raw):
     """스펙 기반 재귀 TLV 파서 결과를 '구조 + 실제 값' 텍스트로 렌더.
 
@@ -358,7 +378,8 @@ def extract_skeleton(raw):
         lines.append(ln)
     lines.append('}')
     if trailer:
-        lines.append(f'// trailer(체크섬 추정): {trailer.hex(" ")}')
+        mark = '일치' if dd_trailer_ok(raw) else '불일치!'
+        lines.append(f'// trailer(체크섬 h=h*17+b): {trailer.hex(" ")}  ← {mark}')
     if unknown:
         u = ', '.join(sorted({f'0x{t:02x}' for t, _ in unknown}))
         lines.append(f'// ⚠ 미지/오정렬 태그: {u}')
@@ -395,6 +416,7 @@ def parse_bytes(raw, name=''):
         'fields': tree,
         'field_count': _count_leaves(tree),
         'trailer': trailer.hex(' ') if trailer else '',
+        'trailer_ok': dd_trailer_ok(raw) if raw[:4] == MAGIC else None,
         'unknown_tags': {f'0x{k:02x}': v for k, v in unk_tags.items()},
         'unknown_samples': samples,
     }
@@ -439,7 +461,8 @@ def print_result(res, preview=40):
     for line in _render_tree(res['fields'], max_lines=preview):
         print('  ' + line)
     if res.get('trailer'):
-        print(f"    // trailer(체크섬): {res['trailer']}")
+        mark = {True: '✓ 체크섬 일치', False: '✗ 체크섬 불일치!', None: ''}[res.get('trailer_ok')]
+        print(f"    // trailer(h=h*17+b): {res['trailer']}  {mark}")
     if res['unknown_tags']:
         print(f"    ⚠ 미지 태그: {res['unknown_tags']}")
         for s in res.get('unknown_samples', [])[:3]:
