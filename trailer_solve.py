@@ -305,6 +305,16 @@ def dd_trailer_ok(raw):
     crc ^= 0x{kw['xorout']:08X}
     return crc == {t_expr}
 ''')
+    elif kind == 'polyhash':
+        print(f'''
+def dd_trailer_ok(raw):
+    """.dd 트레일러(끝 4B) 검증 — 곱셈 롤링해시 (h = h*{kw['M']} + b mod 2^32)"""
+    h = 0x{kw['init']:08X}
+    for byte in raw[{kw['range_start']}:-4]:
+        h = (h * {kw['M']} + byte) & 0xFFFFFFFF
+    h = (h + 0x{kw['const']:08X}) & 0xFFFFFFFF
+    return h == int.from_bytes(raw[-4:], '{kw['t_endian']}')
+''')
     else:  # sum / xor
         op = '+' if kind == 'sum' else '^'
         print(f'''
@@ -400,9 +410,98 @@ def main():
             if t_xor == b'\x00' * 4:
                 print(f'      → 트레일러 불변! 위 위치들은 체크섬 범위 밖이거나 상쇄됨 (범위 단서!)')
         print('    해석: 산술차가 바이트차 합과 같으면(위치 무관) 합산형,')
-        print('          위치마다 xor 패턴이 다르면 CRC 형. 아래 [B]/[D] 가 자동 판정.')
+        print('          위치마다 xor 패턴이 다르면 CRC 형. 아래 단계들이 자동 판정.')
     else:
         print('[N] 근사-중복 쌍 없음 (탐색 예산 내)')
+
+    # [N] 단일 바이트 차분에서 곱셈 해시의 base 를 직접 추론:
+    #     h = h*M + b 라면 뒤에서 k번째 바이트의 δ 변화는 트레일러를 δ·M^k 만큼
+    #     움직인다 → Δt/δ 가 M^k 꼴인지 확인.
+    inferred_bases = set()
+    for (na, ra), (nb, rb), diffs in near:
+        if len(diffs) != 1:
+            continue
+        p = diffs[0]
+        delta = rb[p] - ra[p]
+        if not delta:
+            continue
+        s = (struct.unpack('>I', rb[-4:])[0] - struct.unpack('>I', ra[-4:])[0]) % (1 << 32)
+        if s >= 1 << 31:
+            s -= 1 << 32
+        if s % delta:
+            continue
+        r = s // delta
+        if r <= 0:
+            continue
+        for M in range(2, 1025):
+            t, k = r, 0
+            while t % M == 0:
+                t //= M
+                k += 1
+            if t == 1 and k >= 1:
+                inferred_bases.add(M)
+                print(f'    ▶ 단일바이트 차분 Δt/δ = {r} = {M}^{k} → '
+                      f'곱셈 롤링해시 h=h*{M}+b 의심!')
+        if r <= 1 << 24:
+            inferred_bases.add(r)
+
+    # [P] 곱셈 롤링해시 (h = h*M + b mod 2^32) — init/최종상수는 길이별
+    #     E(L) = I·M^L + C 관계를 모듈러 연립으로 푼다.
+    MOD = 1 << 32
+    default_bases = [17, 31, 33, 37, 131, 257, 65599, 0x01000193]
+    bases, _seen = [], set()
+    for M in sorted(inferred_bases) + default_bases:
+        if M not in _seen and M >= 2:
+            _seen.add(M)
+            bases.append(M)
+    print(f'[P] 곱셈 롤링해시 테스트 (base 후보: {bases[:8]}{"…" if len(bases) > 8 else ""})')
+    for M in bases:
+        for rs in (0, 4):
+            for t_endian in ('big', 'little'):
+                groups = {}
+                consistent = True
+                for name, raw in files:
+                    body = raw[rs:-4]
+                    h = 0
+                    for byte in body:
+                        h = (h * M + byte) & 0xffffffff
+                    R = (int.from_bytes(raw[-4:], t_endian) - h) % MOD
+                    L = len(body)
+                    if L in groups and groups[L] != R:
+                        consistent = False
+                        break
+                    groups[L] = R
+                if not consistent:
+                    continue
+                lens = sorted(groups)
+                cand_IC = []
+                if len(lens) == 1:
+                    L0 = lens[0]
+                    for I in (0, 1):
+                        cand_IC.append((I, (groups[L0] - I * pow(M, L0, MOD)) % MOD))
+                else:
+                    L0, L1 = lens[0], lens[1]
+                    a = (pow(M, L1, MOD) - pow(M, L0, MOD)) % MOD
+                    b = (groups[L1] - groups[L0]) % MOD
+                    if a == 0:
+                        continue
+                    v = (a & -a).bit_length() - 1
+                    if v >= 20 or b % (1 << v):
+                        continue
+                    a2, mod2 = a >> v, MOD >> v
+                    I0 = ((b >> v) * pow(a2, -1, mod2)) % mod2
+                    for k in range(1 << v):
+                        I = (I0 + k * mod2) % MOD
+                        cand_IC.append((I, (groups[L0] - I * pow(M, L0, MOD)) % MOD))
+                for I, C in cand_IC:
+                    if all((I * pow(M, L, MOD) + C) % MOD == groups[L] for L in lens):
+                        print(f'  ★ 확정: h = h*{M} + b (mod 2^32), init=0x{I:08X}, '
+                              f'최종상수 +0x{C:08X}, range=[{rs}:n-4], '
+                              f'트레일러 {t_endian}-endian → {len(files)}/{len(files)}')
+                        emit_snippet('polyhash', M=M, init=I, const=C,
+                                     range_start=rs, t_endian=t_endian)
+                        return
+    print('  곱셈 롤링해시 계열 아님.')
 
     # [B] CRC 차분 GCD — 여러 길이 그룹에서 앵커 방식으로 쌍 수집
     pairs = []
