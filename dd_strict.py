@@ -38,6 +38,7 @@ TRAILER_LEN = 4
 
 TAG_END, TAG_STRING, TAG_ARRAY, TAG_STRUCT = 0x00, 0x09, 0x0a, 0x0b
 TAG_BOOL = 0x06
+TAG_INT8_B = 0x02          # 배열에서 순수 0 마커 (측정 확정, §1.6)
 
 # 스칼라: 태그 -> (struct 포맷, 크기). BOOL 도 고정 4바이트 스칼라로 취급.
 SCALARS = {
@@ -66,63 +67,7 @@ class StrictResult:
         self.fail_reason = fail_reason
         self.fail_path = fail_path    # 그 지점의 필드 경로
         self.named_mode = False       # fallback(이름있는 배열원소 허용)으로 풀렸는가
-        self.resolved_by = None       # 모호를 의미론으로 해소한 근거 ('count-field')
-
-
-# 배열 필드명 → count 성 형제 필드명 후보들
-def _count_key_candidates(arr_name):
-    base = arr_name.lower()
-    stems = {base}
-    if base.endswith('s'):
-        stems.add(base[:-1])
-    keys = set()
-    for s in stems:
-        keys.update({f'nr_of_{s}', f'nr_{s}', f'num_{s}', f'number_of_{s}', f'{s}_count'})
-    return keys
-
-
-def _lookup_count(parent, arr_name):
-    """부모 struct 에서 배열의 count 성 필드 값을 찾는다 (없거나 상충하면 None)."""
-    cands = _count_key_candidates(arr_name)
-    found = {v for k, v in parent.items()
-             if k.lower() in cands and isinstance(v, int) and not isinstance(v, bool)}
-    return found.pop() if len(found) == 1 else None
-
-
-def _count_consistent(tree):
-    """트리 안의 모든 (count 필드를 가진) 배열이 count 와 길이가 일치하는가.
-
-    count 필드가 없는 배열은 제약 없음(통과). 하나라도 count 와 어긋나면 False.
-    """
-    ok = [True]
-
-    def walk(node):
-        if isinstance(node, dict):
-            for k, v in node.items():
-                if isinstance(v, list):
-                    cnt = _lookup_count(node, k)
-                    if cnt is not None and cnt != len(v):
-                        ok[0] = False
-                walk(v)
-        elif isinstance(node, list):
-            for x in node:
-                walk(x)
-
-    walk(tree)
-    return ok[0]
-
-
-def resolve_by_count(solutions):
-    """여러 해 중 '모든 count 필드와 정합'하는 해가 유일하면 그 해를 반환.
-
-    실측 근거: writer 는 배열 옆에 nr_of_<이름> 류의 개수 필드를 함께 기록한다
-    (스펙의 nr_of_used_samples 등). 1바이트 태그 전용 배열의 표현 축퇴
-    ("02 02"=값2 vs 0마커 2개)는 문법으로 해소 불가 — 이 의미론이 유일한 심판.
-    """
-    consistent = [s for s in solutions if _count_consistent(s)]
-    if len(consistent) == 1:
-        return consistent[0]
-    return None
+        self.resolved_by = None       # (예비) 의미론 해소 근거
 
 
 def parse_strict(raw, node_budget=2_000_000):
@@ -130,7 +75,8 @@ def parse_strict(raw, node_budget=2_000_000):
 
     1차 pass 는 실측 규칙(§1.6: 09 원소 이형 판별 + 동질성)만으로 탐색하고,
     실패할 때만 2차 loose pass(이름있는 원소/생략 전면 허용)로 재시도한다.
-    모호(해 2개)가 남으면 count 성 형제 필드로 판정을 시도한다.
+    배열의 0x02 는 순수 0 마커(측정 확정: 이름필드 602/602 이 0)라 배열 원소
+    모호성이 원천 제거되어 대부분 단일 pass 로 유일해가 나온다.
     """
     res = _parse_pass(raw, node_budget, named_elems=False)
     if res.status in ('failed', 'budget'):
@@ -138,12 +84,6 @@ def parse_strict(raw, node_budget=2_000_000):
         if res2.status in ('unique', 'ambiguous'):
             res2.named_mode = True
             res = res2
-    if res.status == 'ambiguous' and len(res.trees) >= 2:
-        pick = resolve_by_count(res.trees)
-        if pick is not None:
-            res.trees = [pick]
-            res.status = 'unique'
-            res.resolved_by = 'count-field'
     return res
 
 
@@ -238,26 +178,23 @@ def _parse_pass(raw, node_budget, named_elems):
             if not emitted:
                 note(i, f'배열 동질성 위반: 0x09 원소 (지배 태그 {dom!r})')
             return
+        if t == TAG_INT8_B:
+            # 0x02 는 배열의 순수 0 마커다 (측정 확정, §1.6): 이름 필드에서
+            # 602/602 이 0 이고, 진짜 int8 값은 0x04 가 싣는다. payload 를 갖지
+            # 않으므로 dom 에 영향 없이 0 하나만 낸다 — 배열 원소 모호성의 근원
+            # (전부-02 = [2,2..] vs [0,0..]) 을 결정적으로 제거한다.
+            yield 0, i + 1, dom, pend
+            return
         if t in SCALARS:
             fmt, size = SCALARS[t]
-            emitted = False
-            # payload 분기: dom 미정이면 t 로 확정 — 단 t 가 pend(기존 마커
-            # 태그)에 있으면 모순이므로 금지 (소급 가지치기).
-            payload_dom_ok = (dom == t) or (dom is None and t not in pend)
-            if (payload_dom_ok or named_elems) and i + 1 + size <= end:
+            # 0x02 를 제외한 스칼라는 값을 싣는 타입 — payload 만 (0 은 0x02 로
+            # 기록되므로 마커 분기 없음). 배열 동질성: dom 과 같은 태그만 허용.
+            if (dom in (None, t) or named_elems) and i + 1 + size <= end:
                 yield (struct.unpack(fmt, raw[i + 1:i + 1 + size])[0],
                        i + 1 + size, t if dom is None else dom, pend)
-                emitted = True
-            # 마커 분기(1바이트 전용): dom 미정이면 pend 에 태그 추가하고 유보,
-            # dom 확정 상태면 t != dom 일 때만 마커.
-            if size == 1 and (dom is None or dom != t or named_elems):
-                new_pend = (pend | {t}) if dom is None else pend
-                yield 0, i + 1, dom, new_pend
-                emitted = True
-            elif named_elems:
-                yield (False if t == TAG_BOOL else 0), i + 1, dom, pend
-                emitted = True
-            if not emitted:
+            elif named_elems and i + 1 + size <= end:
+                yield struct.unpack(fmt, raw[i + 1:i + 1 + size])[0], i + 1 + size, dom, pend
+            else:
                 note(i, f'배열 동질성 위반 또는 경계 초과: 0x{t:02x} '
                         f'(지배 태그 {dom!r})')
             return
@@ -552,7 +489,6 @@ def main():
     mismatch = []          # (name, raw, strict_tree)
     problems = []          # (name, raw, res)
     fallback_used = []     # loose fallback 으로만 풀린 파일
-    count_resolved = []    # count 필드 타이브레이크로 해소된 파일
 
     total = 0
     for name, raw in iter_dd(args.paths, args.raw):
@@ -567,14 +503,9 @@ def main():
         if res.named_mode:
             fallback_used.append(name)
         if res.status == 'unique':
-            if res.resolved_by:
-                # count 필드로 해소된 파일: 휴리스틱은 count 를 모른 채 해1을
-                # 고르므로 다를 수 있음 — mismatch 통계와 분리해 집계
-                count_resolved.append(name)
-            else:
-                heur_tree, _, _ = dd_main.parse_tlv(raw)
-                if heur_tree != res.trees[0]:
-                    mismatch.append((name, heur_tree, res.trees[0]))
+            heur_tree, _, _ = dd_main.parse_tlv(raw)
+            if heur_tree != res.trees[0]:
+                mismatch.append((name, heur_tree, res.trees[0]))
         else:
             problems.append((name, raw, res))
 
@@ -587,9 +518,6 @@ def main():
     print(f'  탐색 예산 초과                : {stats["budget"]}개')
     print(f'  휴리스틱 ≠ 유일해 (휴리스틱 오류): {len(mismatch)}개')
 
-    if count_resolved:
-        print(f'  (해소) count 필드 타이브레이크로 확정: {len(count_resolved)}개 '
-              f'— nr_of_* 형제 필드가 배열 길이를 판정')
     if fallback_used:
         print(f'  (참고) loose fallback 필요: {len(fallback_used)}개 '
               f'— 스펙 §1.6 규칙에 예외가 존재한다는 뜻, 파일 공유 바람')

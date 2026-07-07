@@ -190,15 +190,12 @@ class TLVParser:
     def _read_array(self):
         """배열: END(0x00) 까지 'SubType + Value' 원소들을 읽는다.
 
-        실측 정정 (2026-07-06, DD_FORMAT_SPEC.md §1.6):
-          - 0x09 원소는 bare '문자열 값'이다 (이름 있는 멤버가 아님!).
-            valid_values = [TRUE, TRUE, ...] 같은 문자열 배열이 실존하며,
-            과거의 '이름있는 원소 {name: value}' 해석은 원소를 둘씩 짝지어
-            먹는 오독이었다 (짝수 개면 조용히 잘못 파싱되던 버그).
-          - 스칼라 원소도 0값이면 payload 가 통째로 생략된다 (es_values 의
-            0 드롭아웃: ... 05 23 3d | 02 | 05 19 19 ...  ← 02 뒤 payload 없음).
-            payload 로 읽었을 때 그 다음 바이트가 유효한 원소 시작(0x00~0x0b)이
-            아니면 생략으로 판정한다.
+        실측 정정 (DD_FORMAT_SPEC.md §1.6):
+          - 0x09 원소는 이형: 이름 NUL 직후가 컨테이너(0a/0b)면 {이름: 컨테이너},
+            아니면 bare 문자열 값. (둘씩 짝지어 먹던 과거 오독 차단)
+          - 0x02 는 배열의 순수 0 마커다 (측정 확정: 이름필드 602/602 이 0,
+            진짜 int8 값은 0x04). payload 없이 1바이트만 소비하고 값 0.
+          - 그 외 스칼라는 값을 싣는다 (0 은 0x02 로 기록되므로 마커 판정 불필요).
         """
         arr = []
         dom = None                # 배열 지배 태그 (§1.6 동질성 규칙)
@@ -222,35 +219,18 @@ class TLVParser:
                     arr.append(s)
                     dom = dom or TAG_STRING
                 continue
-            # 타입 태그 + 값. 배열의 스칼라는 이름 있는 필드와 달리
-            # KEY_ANCHOR 훔쳐보기가 오히려 해롭다 (enum 값 0x09xx 가 payload
-            # 안에서 앵커 흉내 가능) → 여기서 직접 고정폭으로 읽는다.
+            # 0x02 는 배열의 순수 0 마커 (측정 확정, §1.6): 이름 필드 602/602 이
+            # 0, 진짜 int8 값은 0x04. payload 없이 1바이트만 소비, 0 을 낸다.
+            # 이걸로 전부-02 배열의 [2,2..] vs [0,0..] 모호성이 사라진다.
+            if t == TAG_INT8_B:
+                self.i += 1
+                arr.append(0)
+                continue
+            # 그 외 스칼라 + 값. 0 은 0x02 로 기록되므로 여기선 마커 판정 불필요,
+            # 고정폭 payload 만 읽는다.
             self.i += 1
             if t in SCALAR_FMT:
                 f, size = SCALAR_FMT[t]
-                if size == 1:
-                    # 동질성 규칙: 지배 태그가 정해진 배열에서 그와 다른
-                    # 1바이트 태그는 payload 없는 '0 마커'다 (es_values 의
-                    # 드롭아웃: 05 배열 속 02). 지배 태그 미정(배열 머리)일
-                    # 때만 lookahead 로 판정. wide 스칼라(enum 등)에는 생략이
-                    # 없다 — DD_FORMAT_SPEC.md §1.6.
-                    if dom is not None and dom != t:
-                        arr.append(0)
-                        continue
-                    if dom is None:
-                        cand = self.raw[self.i] if self.i < self.end else None
-                        # payload 후보가 wide/컨테이너 태그(0x05~0x0b)면 배열
-                        # 머리의 드롭아웃이 확실 — 1바이트 배열의 payload 가
-                        # 우연히 그 값이면서 뒤가 이어질 확률은 payload 해석이
-                        # 두 스텝 안에 깨지는 것으로 배제됨 (dd_strict 대조).
-                        if cand is not None and TAG_ENUM <= cand <= TAG_STRUCT:
-                            arr.append(0)
-                            continue
-                        payload_ok = (self.i + 1 < self.end
-                                      and self.raw[self.i + 1] <= TAG_STRUCT)
-                        if cand is not None and cand <= TAG_STRUCT and not payload_ok:
-                            arr.append(0)
-                            continue
                 if self.i + size <= self.n:
                     arr.append(struct.unpack(f, self.raw[self.i:self.i + size])[0])
                     self.i += size
