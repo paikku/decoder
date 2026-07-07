@@ -57,7 +57,7 @@ except Exception:
 
 class StrictResult:
     __slots__ = ('status', 'trees', 'visited', 'fail_pos', 'fail_reason', 'fail_path',
-                 'named_mode', 'resolved_by')
+                 'named_mode', 'resolved_by', 'strict_fail')
 
     def __init__(self, status, trees, visited, fail_pos=-1, fail_reason='', fail_path=()):
         self.status = status          # 'unique' | 'ambiguous' | 'failed' | 'budget'
@@ -68,6 +68,7 @@ class StrictResult:
         self.fail_path = fail_path    # 그 지점의 필드 경로
         self.named_mode = False       # fallback(이름있는 배열원소 허용)으로 풀렸는가
         self.resolved_by = None       # (예비) 의미론 해소 근거
+        self.strict_fail = None       # fallback 시 1차(엄격) pass 실패 정보
 
 
 def parse_strict(raw, node_budget=2_000_000):
@@ -80,9 +81,11 @@ def parse_strict(raw, node_budget=2_000_000):
     """
     res = _parse_pass(raw, node_budget, named_elems=False)
     if res.status in ('failed', 'budget'):
+        strict_fail = (res.fail_pos, res.fail_reason, res.fail_path)
         res2 = _parse_pass(raw, node_budget, named_elems=True)
         if res2.status in ('unique', 'ambiguous'):
             res2.named_mode = True
+            res2.strict_fail = strict_fail       # 1차 실패 원인 보존 (진단용)
             res = res2
     return res
 
@@ -522,7 +525,7 @@ def main():
         res = parse_strict(raw)
         stats[res.status] += 1
         if res.named_mode:
-            fallback_used.append(name)
+            fallback_used.append((name, raw, res))
         if res.status == 'unique':
             heur_tree, _, _ = dd_main.parse_tlv(raw)
             if heur_tree != res.trees[0]:
@@ -541,7 +544,29 @@ def main():
 
     if fallback_used:
         print(f'  (참고) loose fallback 필요: {len(fallback_used)}개 '
-              f'— 스펙 §1.6 규칙에 예외가 존재한다는 뜻, 파일 공유 바람')
+              f'— 1차(엄격) pass 가 실패한 지점 분석 ↓')
+        # 1차 실패 사유를 유형별로 집계 (공통 원인 = 놓친 규칙)
+        from collections import Counter
+        reason_kinds = Counter()
+        for _, _, res in fallback_used:
+            sf = res.strict_fail
+            reason_kinds[sf[1] if sf else '(사유 없음)'] += 1
+        print('    [1차 실패 사유 분포]')
+        for reason, c in reason_kinds.most_common():
+            print(f'      {c:>3}개  {reason}')
+        # 대표 파일 몇 개의 실패 지점 hex 를 찍어 규칙을 특정
+        print('    [대표 파일 진단]')
+        for name, raw, res in fallback_used[:args.max_diag]:
+            sf = res.strict_fail
+            if not sf or sf[0] < 0:
+                continue
+            pos, reason, fpath = sf
+            loc = ' > '.join(fpath) if fpath else '(최상위)'
+            print(f'    ┌─ {name}')
+            print(f'    │ 1차 실패 @오프셋 {pos} / 경로: {loc}')
+            print(f'    │ 사유: {reason}')
+            print(hexdump(raw, pos, radius=32))
+            print('    └─')
 
     if total and stats['unique'] == total and not mismatch:
         print('\n결론: 전 파일이 유일해로 확정 — 현재 휴리스틱 파서의 출력과 100% 일치.')
