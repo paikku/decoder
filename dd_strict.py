@@ -56,7 +56,7 @@ except Exception:
 
 class StrictResult:
     __slots__ = ('status', 'trees', 'visited', 'fail_pos', 'fail_reason', 'fail_path',
-                 'named_mode')
+                 'named_mode', 'resolved_by')
 
     def __init__(self, status, trees, visited, fail_pos=-1, fail_reason='', fail_path=()):
         self.status = status          # 'unique' | 'ambiguous' | 'failed' | 'budget'
@@ -66,21 +66,84 @@ class StrictResult:
         self.fail_reason = fail_reason
         self.fail_path = fail_path    # 그 지점의 필드 경로
         self.named_mode = False       # fallback(이름있는 배열원소 허용)으로 풀렸는가
+        self.resolved_by = None       # 모호를 의미론으로 해소한 근거 ('count-field')
+
+
+# 배열 필드명 → count 성 형제 필드명 후보들
+def _count_key_candidates(arr_name):
+    base = arr_name.lower()
+    stems = {base}
+    if base.endswith('s'):
+        stems.add(base[:-1])
+    keys = set()
+    for s in stems:
+        keys.update({f'nr_of_{s}', f'nr_{s}', f'num_{s}', f'number_of_{s}', f'{s}_count'})
+    return keys
+
+
+def _lookup_count(parent, arr_name):
+    """부모 struct 에서 배열의 count 성 필드 값을 찾는다 (없거나 상충하면 None)."""
+    cands = _count_key_candidates(arr_name)
+    found = {v for k, v in parent.items()
+             if k.lower() in cands and isinstance(v, int) and not isinstance(v, bool)}
+    return found.pop() if len(found) == 1 else None
+
+
+def _count_consistent(tree):
+    """트리 안의 모든 (count 필드를 가진) 배열이 count 와 길이가 일치하는가.
+
+    count 필드가 없는 배열은 제약 없음(통과). 하나라도 count 와 어긋나면 False.
+    """
+    ok = [True]
+
+    def walk(node):
+        if isinstance(node, dict):
+            for k, v in node.items():
+                if isinstance(v, list):
+                    cnt = _lookup_count(node, k)
+                    if cnt is not None and cnt != len(v):
+                        ok[0] = False
+                walk(v)
+        elif isinstance(node, list):
+            for x in node:
+                walk(x)
+
+    walk(tree)
+    return ok[0]
+
+
+def resolve_by_count(solutions):
+    """여러 해 중 '모든 count 필드와 정합'하는 해가 유일하면 그 해를 반환.
+
+    실측 근거: writer 는 배열 옆에 nr_of_<이름> 류의 개수 필드를 함께 기록한다
+    (스펙의 nr_of_used_samples 등). 1바이트 태그 전용 배열의 표현 축퇴
+    ("02 02"=값2 vs 0마커 2개)는 문법으로 해소 불가 — 이 의미론이 유일한 심판.
+    """
+    consistent = [s for s in solutions if _count_consistent(s)]
+    if len(consistent) == 1:
+        return consistent[0]
+    return None
 
 
 def parse_strict(raw, node_budget=2_000_000):
-    """2-pass 백트래킹: 1차는 실측 규칙(배열 09 = bare 문자열)만으로 탐색.
+    """2-pass 백트래킹 + 의미론 타이브레이크.
 
-    실패할 때만 2차로 '이름 있는 배열 원소' 해석을 추가 허용한다 — 짝수 개
-    문자열 배열에서 두 해석이 모두 경계를 맞춰 모호 판정이 폭주하는 것을 막고,
-    실측 증거(bare 문자열)가 우선하도록.
+    1차 pass 는 실측 규칙(§1.6: 09 원소 이형 판별 + 동질성)만으로 탐색하고,
+    실패할 때만 2차 loose pass(이름있는 원소/생략 전면 허용)로 재시도한다.
+    모호(해 2개)가 남으면 count 성 형제 필드로 판정을 시도한다.
     """
     res = _parse_pass(raw, node_budget, named_elems=False)
     if res.status in ('failed', 'budget'):
         res2 = _parse_pass(raw, node_budget, named_elems=True)
         if res2.status in ('unique', 'ambiguous'):
             res2.named_mode = True
-            return res2
+            res = res2
+    if res.status == 'ambiguous' and len(res.trees) >= 2:
+        pick = resolve_by_count(res.trees)
+        if pick is not None:
+            res.trees = [pick]
+            res.status = 'unique'
+            res.resolved_by = 'count-field'
     return res
 
 
@@ -132,50 +195,78 @@ def _parse_pass(raw, node_budget, named_elems):
         else:
             note(i - 1, f'미지 SubType 0x{subtype:02x}')
 
-    def elem_alts(i, t, dom):
-        """배열 원소 후보들: (값, 다음위치, 원소 확정 후 지배태그).
+    def elem_alts(i, t, dom, pend):
+        """배열 원소 후보들: (값, 다음위치, 새 지배태그, 새 pend).
 
         배열 동질성(§1.6): 한 배열의 원소는 전부 같은 태그(dom)여야 하고,
         유일한 예외는 지배 태그와 다른 1바이트 태그가 payload 없이 나타나는
-        '0 마커'다. 이 제약이 드롭아웃/위험구간 enum 의 자기정렬 모호성을
-        결정적으로 제거한다. loose pass(named_elems)에서는 제약 해제.
+        '0 마커'다. dom 이 아직 미정(None)일 때 낸 마커의 태그는 `pend` 에
+        모아두고, 나중에 payload 가 dom 을 그 태그로 확정하려 하면 **소급
+        가지치기**한다 (마커 태그 == 최종 dom 은 모순). 이 제약이 순수
+        `02 02 02 02` 류의 지수적 혼합해를 정확히 2해(전부-payload/전부-마커)로
+        수렴시킨다. loose pass(named_elems)에서는 제약 해제.
         """
         if t == TAG_STRING:
             j = raw.find(0, i + 1, end)
             if j == -1:
                 note(i + 1, '배열 문자열 원소의 NUL 종결자 없음')
                 return
-            if dom in (None, TAG_STRING) or named_elems:
-                yield raw[i + 1:j].decode('utf-8', 'replace'), j + 1, TAG_STRING
-            if named_elems and NAME_RE.match(raw[i + 1:j]) and j + 1 < end:
+            # 09 원소는 이형(§1.6): 이름 NUL 직후가 컨테이너 태그(0a/0b)면
+            # '이름있는 컨테이너 원소' {name: container} (detector 맵 실측),
+            # 아니면 bare 문자열 값. bare 해석은 뒤의 컨테이너 원소가 동질성
+            # 위반이라 애초에 정합 불가 → post-NUL 판별이 결정적이다.
+            nxt = raw[j + 1] if j + 1 < end else None
+            named_form = (nxt in (TAG_ARRAY, TAG_STRUCT)
+                          and NAME_RE.match(raw[i + 1:j]) is not None)
+            emitted = False
+            if named_form and (dom in (None, 'NAMED') or named_elems):
+                name = raw[i + 1:j].decode()
+                for v, p in gen_container(j + 2, nxt == TAG_STRUCT):
+                    yield {name: v}, p, 'NAMED', pend
+                emitted = True
+            if ((not named_form or named_elems)
+                    and (dom in (None, TAG_STRING) or named_elems)):
+                yield raw[i + 1:j].decode('utf-8', 'replace'), j + 1, TAG_STRING, pend
+                emitted = True
+            if (named_elems and not named_form and j + 1 < end
+                    and NAME_RE.match(raw[i + 1:j])):
+                # loose 한정: 스칼라 값을 갖는 이름있는 원소 등 그 외 형태
                 name = raw[i + 1:j].decode()
                 for val, k2 in gen_value(j + 2, raw[j + 1], named=True):
-                    yield {name: val}, k2, dom
+                    yield {name: val}, k2, dom, pend
+                emitted = True
+            if not emitted:
+                note(i, f'배열 동질성 위반: 0x09 원소 (지배 태그 {dom!r})')
             return
         if t in SCALARS:
             fmt, size = SCALARS[t]
             emitted = False
-            if (dom in (None, t) or named_elems) and i + 1 + size <= end:
+            # payload 분기: dom 미정이면 t 로 확정 — 단 t 가 pend(기존 마커
+            # 태그)에 있으면 모순이므로 금지 (소급 가지치기).
+            payload_dom_ok = (dom == t) or (dom is None and t not in pend)
+            if (payload_dom_ok or named_elems) and i + 1 + size <= end:
                 yield (struct.unpack(fmt, raw[i + 1:i + 1 + size])[0],
-                       i + 1 + size, t if dom is None else dom)
+                       i + 1 + size, t if dom is None else dom, pend)
                 emitted = True
+            # 마커 분기(1바이트 전용): dom 미정이면 pend 에 태그 추가하고 유보,
+            # dom 확정 상태면 t != dom 일 때만 마커.
             if size == 1 and (dom is None or dom != t or named_elems):
-                yield 0, i + 1, dom               # 0 마커 (payload 없음)
+                new_pend = (pend | {t}) if dom is None else pend
+                yield 0, i + 1, dom, new_pend
                 emitted = True
             elif named_elems:
-                yield (False if t == TAG_BOOL else 0), i + 1, dom
+                yield (False if t == TAG_BOOL else 0), i + 1, dom, pend
                 emitted = True
             if not emitted:
                 note(i, f'배열 동질성 위반 또는 경계 초과: 0x{t:02x} '
-                        f'(지배 태그 0x{dom:02x})' if dom is not None
-                     else f'payload({size}B)가 경계(n-4)를 넘음')
+                        f'(지배 태그 {dom!r})')
             return
         if t in (TAG_STRUCT, TAG_ARRAY):
             if dom in (None, t) or named_elems:
                 for v, p in gen_container(i + 1, t == TAG_STRUCT):
-                    yield v, p, t
+                    yield v, p, t, pend
             else:
-                note(i, f'배열 동질성 위반: 0x{t:02x} 원소 (지배 태그 0x{dom:02x})')
+                note(i, f'배열 동질성 위반: 0x{t:02x} 원소 (지배 태그 {dom!r})')
             return
         note(i, f'미지 SubType 0x{t:02x}')
 
@@ -187,7 +278,7 @@ def _parse_pass(raw, node_budget, named_elems):
         막히면 가장 최근 원소의 다음 대안으로 되감는다. 재귀는 중첩
         (struct 안의 array 등) 깊이에만 쌓인다.
         """
-        items, iters, labels, doms = [], [], [], []
+        items, iters, labels, states = [], [], [], []
         i = i0
 
         def backtrack():
@@ -198,13 +289,13 @@ def _parse_pass(raw, node_budget, named_elems):
                 path.pop()
                 if nxt is not None:
                     items[-1] = (items[-1][0], nxt[0]) if is_struct else nxt[0]
-                    doms[-1] = nxt[2]
+                    states[-1] = (nxt[2], nxt[3])
                     i = nxt[1]
                     return True
                 iters.pop()
                 items.pop()
                 labels.pop()
-                doms.pop()
+                states.pop()
             return False
 
         while True:
@@ -249,10 +340,12 @@ def _parse_pass(raw, node_budget, named_elems):
                     continue
                 name = nm.decode()
                 label = name
-                it = ((v, p, None) for v, p in gen_value(k + 1, raw[k], named=True))
+                it = ((v, p, None, frozenset())
+                      for v, p in gen_value(k + 1, raw[k], named=True))
             else:                                 # 배열 원소 (동질성 규칙 적용)
                 label = f'[{len(items)}]'
-                it = elem_alts(i, t, doms[-1] if doms else None)
+                dom, pend = states[-1] if states else (None, frozenset())
+                it = elem_alts(i, t, dom, pend)
 
             path.append(label)
             first = next(it, None)
@@ -264,7 +357,7 @@ def _parse_pass(raw, node_budget, named_elems):
             items.append((name, first[0]) if is_struct else first[0])
             iters.append(it)
             labels.append(label)
-            doms.append(first[2])
+            states.append((first[2], first[3]))
             i = first[1]
 
     def gen_struct(i):
@@ -275,10 +368,12 @@ def _parse_pass(raw, node_budget, named_elems):
 
     start = 5 if raw[4] == TAG_STRUCT else 4
     solutions = []
+    # 여러 degenerate 배열이 곱해질 수 있어 최대 8해까지 모아 count 로 고른다.
+    SOL_CAP = 8
     for tree, pos in gen_struct(start):
         if pos == end:                            # 전역 기준: 경계 정확 일치
             solutions.append(tree)
-            if len(solutions) >= 2:
+            if len(solutions) >= SOL_CAP:
                 break
         else:
             note(pos, f'구조는 닫혔지만 경계 전 종료 (남은 {end - pos}B)')
@@ -456,7 +551,8 @@ def main():
     checksum_bad = []
     mismatch = []          # (name, raw, strict_tree)
     problems = []          # (name, raw, res)
-    fallback_used = []     # 이름있는 배열원소 fallback 으로만 풀린 파일
+    fallback_used = []     # loose fallback 으로만 풀린 파일
+    count_resolved = []    # count 필드 타이브레이크로 해소된 파일
 
     total = 0
     for name, raw in iter_dd(args.paths, args.raw):
@@ -471,9 +567,14 @@ def main():
         if res.named_mode:
             fallback_used.append(name)
         if res.status == 'unique':
-            heur_tree, _, _ = dd_main.parse_tlv(raw)
-            if heur_tree != res.trees[0]:
-                mismatch.append((name, heur_tree, res.trees[0]))
+            if res.resolved_by:
+                # count 필드로 해소된 파일: 휴리스틱은 count 를 모른 채 해1을
+                # 고르므로 다를 수 있음 — mismatch 통계와 분리해 집계
+                count_resolved.append(name)
+            else:
+                heur_tree, _, _ = dd_main.parse_tlv(raw)
+                if heur_tree != res.trees[0]:
+                    mismatch.append((name, heur_tree, res.trees[0]))
         else:
             problems.append((name, raw, res))
 
@@ -486,9 +587,12 @@ def main():
     print(f'  탐색 예산 초과                : {stats["budget"]}개')
     print(f'  휴리스틱 ≠ 유일해 (휴리스틱 오류): {len(mismatch)}개')
 
+    if count_resolved:
+        print(f'  (해소) count 필드 타이브레이크로 확정: {len(count_resolved)}개 '
+              f'— nr_of_* 형제 필드가 배열 길이를 판정')
     if fallback_used:
-        print(f'  (참고) 이름있는 배열원소 fallback 필요: {len(fallback_used)}개 '
-              f'— 스펙 §1.6 의 bare 규칙에 예외가 존재한다는 뜻, 파일 공유 바람')
+        print(f'  (참고) loose fallback 필요: {len(fallback_used)}개 '
+              f'— 스펙 §1.6 규칙에 예외가 존재한다는 뜻, 파일 공유 바람')
 
     if total and stats['unique'] == total and not mismatch:
         print('\n결론: 전 파일이 유일해로 확정 — 현재 휴리스틱 파서의 출력과 100% 일치.')

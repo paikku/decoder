@@ -208,11 +208,19 @@ class TLVParser:
                 self.i += 1
                 break
             if t == TAG_STRING:
-                # bare 문자열 값 원소
+                # 09 원소는 이형(§1.6): 이름 NUL 직후가 컨테이너 태그(0a/0b)면
+                # '이름있는 컨테이너 원소' {name: container} (detector 맵 실측),
+                # 아니면 bare 문자열 값.
                 self.i += 1
                 s, self.i = _read_cstr(self.raw, self.i)
-                arr.append(s)
-                dom = dom or TAG_STRING
+                nxt = self.raw[self.i] if self.i < self.end else None
+                if nxt in (TAG_ARRAY, TAG_STRUCT):
+                    self.i += 1
+                    arr.append({s: self._read_value(nxt)})
+                    dom = dom or 'NAMED'
+                else:
+                    arr.append(s)
+                    dom = dom or TAG_STRING
                 continue
             # 타입 태그 + 값. 배열의 스칼라는 이름 있는 필드와 달리
             # KEY_ANCHOR 훔쳐보기가 오히려 해롭다 (enum 값 0x09xx 가 payload
