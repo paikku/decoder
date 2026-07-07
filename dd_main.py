@@ -219,10 +219,10 @@ class TLVParser:
                     arr.append(s)
                     dom = dom or TAG_STRING
                 continue
-            # 0x02 는 배열의 순수 0 마커 (측정 확정, §1.6): 이름 필드 602/602 이
-            # 0, 진짜 int8 값은 0x04. payload 없이 1바이트만 소비, 0 을 낸다.
-            # 이걸로 전부-02 배열의 [2,2..] vs [0,0..] 모호성이 사라진다.
-            if t == TAG_INT8_B:
+            # 0x02/0x03 은 배열의 payload 없는 0 마커 (측정 확정, §1.6): 이름
+            # 필드에서 0x02 는 602/602, 0x03 은 50/50 이 값 0. 진짜 int8 값은
+            # 0x04(int8_c). 1바이트만 소비하고 0 을 낸다.
+            if t in (TAG_INT8_B, TAG_UINT8):
                 self.i += 1
                 arr.append(0)
                 continue

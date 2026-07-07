@@ -38,7 +38,10 @@ TRAILER_LEN = 4
 
 TAG_END, TAG_STRING, TAG_ARRAY, TAG_STRUCT = 0x00, 0x09, 0x0a, 0x0b
 TAG_BOOL = 0x06
-TAG_INT8_B = 0x02          # 배열에서 순수 0 마커 (측정 확정, §1.6)
+TAG_INT8_B = 0x02
+# 배열에서 payload 없는 0 마커 태그들 (측정 확정, §1.6): 이름 필드에서 0x02 는
+# 602/602, 0x03 은 50/50 이 값 0. 진짜 int8 값은 0x04(int8_c)가 싣는다(1087개).
+ARRAY_MARKERS = frozenset({0x02, 0x03})
 
 # 스칼라: 태그 -> (struct 포맷, 크기). BOOL 도 고정 4바이트 스칼라로 취급.
 SCALARS = {
@@ -181,11 +184,11 @@ def _parse_pass(raw, node_budget, named_elems):
             if not emitted:
                 note(i, f'배열 동질성 위반: 0x09 원소 (지배 태그 {dom!r})')
             return
-        if t == TAG_INT8_B:
-            # 0x02 는 배열의 순수 0 마커다 (측정 확정, §1.6): 이름 필드에서
-            # 602/602 이 0 이고, 진짜 int8 값은 0x04 가 싣는다. payload 를 갖지
-            # 않으므로 dom 에 영향 없이 0 하나만 낸다 — 배열 원소 모호성의 근원
-            # (전부-02 = [2,2..] vs [0,0..]) 을 결정적으로 제거한다.
+        if t in ARRAY_MARKERS:
+            # 0x02/0x03 은 배열의 payload 없는 0 마커다 (측정 확정, §1.6).
+            # dom 에 영향 없이 0 하나만 낸다 — 원소 모호성의 근원을 제거하고,
+            # int8 값 배열(dom=0x04)에 섞인 0 도 올바르게 0 으로 읽는다
+            # (position_nrs: 02 02 03 04 02 04 03 … → [0,0,0,2,2,3,…]).
             yield 0, i + 1, dom, pend
             return
         if t in SCALARS:
