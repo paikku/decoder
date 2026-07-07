@@ -344,6 +344,27 @@ def hexdump(raw, pos, radius=24):
     return '\n'.join(lines)
 
 
+def _dump_field_hex(raw, fieldname, width=64):
+    """필드명 앵커(09+name+00)를 찾아 그 SubType+값 바이트를 hex 로 덤프.
+
+    휴리스틱/엄격 파서가 갈라지는 배열의 '실제 바이트'를 눈으로 보게 해준다 —
+    재현 안 되는 디싱크의 근원을 실데이터에서 직접 잡기 위함.
+    """
+    anchor = b'\x09' + fieldname.encode('ascii', 'replace') + b'\x00'
+    idx = raw.find(anchor)
+    if idx == -1:
+        return ''
+    start = idx + len(anchor)                 # SubType 바이트부터
+    end = min(len(raw) - TRAILER_LEN, start + width)
+    out = []
+    for base in range(start, end, 16):
+        chunk = raw[base:min(base + 16, end)]
+        hx = ' '.join(f'{b:02x}' for b in chunk)
+        asc = ''.join(chr(b) if 0x20 <= b <= 0x7e else '.' for b in chunk)
+        out.append(f'          {base:6d}  {hx:<47}  |{asc}|')
+    return '\n'.join(out)
+
+
 def tree_diff(a, b, path=''):
     """두 트리의 차이를 (경로, a값, b값) 리스트로."""
     if type(a) is not type(b):
@@ -505,7 +526,7 @@ def main():
         if res.status == 'unique':
             heur_tree, _, _ = dd_main.parse_tlv(raw)
             if heur_tree != res.trees[0]:
-                mismatch.append((name, heur_tree, res.trees[0]))
+                mismatch.append((name, raw, heur_tree, res.trees[0]))
         else:
             problems.append((name, raw, res))
 
@@ -527,11 +548,22 @@ def main():
         print('      0값 생략/경계 처리가 이 코퍼스에서 증명됨 ✓')
 
     if mismatch:
-        print('\n⚠ 휴리스틱이 잘못 읽은 파일 — 필드 단위 diff (휴리스틱 ↔ 유일해):')
-        for name, ht, st_tree in mismatch[:args.max_diag]:
+        print('\n⚠ 휴리스틱이 잘못 읽은 파일 — 필드 단위 diff + 원본 hex '
+              '(휴리스틱 ↔ 유일해):')
+        for name, raw, ht, st_tree in mismatch[:args.max_diag]:
             print(f'  {name}')
-            for p, va, vb in tree_diff(ht, st_tree)[:6]:
+            diffs = tree_diff(ht, st_tree)
+            for p, va, vb in diffs[:6]:
                 print(f'      {p}:  휴리스틱={va!r}  ↔  유일해={vb!r}')
+            # 어긋난 첫 배열 필드의 원본 바이트를 찍어 근원을 드러낸다
+            for p, va, vb in diffs:
+                leaf = p.split('.')[-1].split('[')[0]
+                if leaf:
+                    hx = _dump_field_hex(raw, leaf)
+                    if hx:
+                        print(f'      └ 필드 {leaf!r} 원본 bytes:')
+                        print(hx)
+                        break
 
     for name, raw, res in problems[:args.max_diag]:
         diagnose(name, raw, res, args.verbose)
