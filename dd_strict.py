@@ -193,16 +193,18 @@ def _parse_pass(raw, node_budget, named_elems):
             return
         if t in SCALARS:
             fmt, size = SCALARS[t]
-            # 0x02 를 제외한 스칼라는 값을 싣는 타입 — payload 만 (0 은 0x02 로
-            # 기록되므로 마커 분기 없음). 배열 동질성: dom 과 같은 태그만 허용.
-            if (dom in (None, t) or named_elems) and i + 1 + size <= end:
+            # 수치 값 타입(0x04 int8 / 0x05 enum / 0x06 bool / 0x07·0x08 float).
+            # 배열은 엄격 동질이 아니라 '수치 카테고리' 동질이다 — 값이 좁은
+            # 타입 범위를 넘으면 더 넓은 수치 타입으로 승격된다 (실측: int8 값이
+            # 127 을 넘는 지점에서 04→05 로 바뀜, 등차수열 34,39,…124,129,…).
+            # 그래서 dom 을 특정 태그가 아닌 'NUM' 카테고리로 잡아 폭이 다른
+            # 수치 원소를 허용하되, 문자열/컨테이너 교차만 디싱크로 막는다.
+            if (dom in (None, 'NUM') or named_elems) and i + 1 + size <= end:
                 yield (struct.unpack(fmt, raw[i + 1:i + 1 + size])[0],
-                       i + 1 + size, t if dom is None else dom, pend)
-            elif named_elems and i + 1 + size <= end:
-                yield struct.unpack(fmt, raw[i + 1:i + 1 + size])[0], i + 1 + size, dom, pend
+                       i + 1 + size, 'NUM', pend)
             else:
-                note(i, f'배열 동질성 위반 또는 경계 초과: 0x{t:02x} '
-                        f'(지배 태그 {dom!r})')
+                note(i, f'배열 카테고리 위반 또는 경계 초과: 0x{t:02x} '
+                        f'(지배 카테고리 {dom!r})')
             return
         if t in (TAG_STRUCT, TAG_ARRAY):
             if dom in (None, t) or named_elems:
