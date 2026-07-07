@@ -201,6 +201,7 @@ class TLVParser:
             아니면 생략으로 판정한다.
         """
         arr = []
+        dom = None                # 배열 지배 태그 (§1.6 동질성 규칙)
         while self.i < self.end:
             t = self.raw[self.i]
             if t == TAG_END:
@@ -211,28 +212,56 @@ class TLVParser:
                 self.i += 1
                 s, self.i = _read_cstr(self.raw, self.i)
                 arr.append(s)
+                dom = dom or TAG_STRING
                 continue
-            # 타입 태그 + 값 (스칼라는 0값 payload 생략 가능)
+            # 타입 태그 + 값. 배열의 스칼라는 이름 있는 필드와 달리
+            # KEY_ANCHOR 훔쳐보기가 오히려 해롭다 (enum 값 0x09xx 가 payload
+            # 안에서 앵커 흉내 가능) → 여기서 직접 고정폭으로 읽는다.
             self.i += 1
-            width = None
             if t in SCALAR_FMT:
-                width = SCALAR_FMT[t][1]
-            elif t == TAG_BOOL:
-                width = 4
-            if width == 1:
-                # 1바이트 스칼라: payload 후보 바이트 자체가 유효한 원소 시작
-                # (0x00~0x0b)이면 '0 생략 마커'로 확정. 연속 드롭아웃(02 02)을
-                # "int8 값 2"로 오독하는 모호성을 없애는 결정 규칙 —
-                # 실측상 배열의 1바이트 태그는 0 표기로만 관측됨.
-                if self.i >= self.end or self.raw[self.i] <= TAG_STRUCT:
-                    arr.append(0)
-                    continue
-            elif width is not None:
-                nxt = self.i + width
-                if nxt > self.end or self.raw[nxt] > TAG_STRUCT:
-                    arr.append(False if t == TAG_BOOL else 0)   # 생략 → 0
-                    continue
+                f, size = SCALAR_FMT[t]
+                if size == 1:
+                    # 동질성 규칙: 지배 태그가 정해진 배열에서 그와 다른
+                    # 1바이트 태그는 payload 없는 '0 마커'다 (es_values 의
+                    # 드롭아웃: 05 배열 속 02). 지배 태그 미정(배열 머리)일
+                    # 때만 lookahead 로 판정. wide 스칼라(enum 등)에는 생략이
+                    # 없다 — DD_FORMAT_SPEC.md §1.6.
+                    if dom is not None and dom != t:
+                        arr.append(0)
+                        continue
+                    if dom is None:
+                        cand = self.raw[self.i] if self.i < self.end else None
+                        # payload 후보가 wide/컨테이너 태그(0x05~0x0b)면 배열
+                        # 머리의 드롭아웃이 확실 — 1바이트 배열의 payload 가
+                        # 우연히 그 값이면서 뒤가 이어질 확률은 payload 해석이
+                        # 두 스텝 안에 깨지는 것으로 배제됨 (dd_strict 대조).
+                        if cand is not None and TAG_ENUM <= cand <= TAG_STRUCT:
+                            arr.append(0)
+                            continue
+                        payload_ok = (self.i + 1 < self.end
+                                      and self.raw[self.i + 1] <= TAG_STRUCT)
+                        if cand is not None and cand <= TAG_STRUCT and not payload_ok:
+                            arr.append(0)
+                            continue
+                if self.i + size <= self.n:
+                    arr.append(struct.unpack(f, self.raw[self.i:self.i + size])[0])
+                    self.i += size
+                    dom = dom or t
+                else:
+                    self.i = self.n
+                    arr.append(None)
+                continue
+            if t == TAG_BOOL:
+                if self.i + 4 <= self.n:
+                    arr.append(struct.unpack('>i', self.raw[self.i:self.i + 4])[0])
+                    self.i += 4
+                    dom = dom or t
+                else:
+                    self.i = self.n
+                    arr.append(None)
+                continue
             arr.append(self._read_value(t))
+            dom = dom or t
         return arr
 
 

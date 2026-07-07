@@ -101,22 +101,24 @@ def _parse_pass(raw, node_budget, named_elems):
     def gen_value(i, subtype, named):
         if subtype in SCALARS:
             fmt, size = SCALARS[subtype]
-            if not named and size == 1 and not named_elems:
-                # 배열 bare 1바이트 스칼라 (기본 pass): payload 후보 바이트가
-                # 유효한 원소 시작(0x00~0x0b)이면 '0 생략 마커'로 확정.
-                # 연속 드롭아웃(02 02)이 "int8 값 2" 해석과 모호해지는 것을
-                # 결정 규칙으로 차단 — 실측상 배열 1바이트 태그는 0 표기뿐.
+            has_payload = i + size <= end
+            if has_payload:                       # 분기 A: payload 존재 (우선)
+                yield struct.unpack(fmt, raw[i:i + size])[0], i + size
+            if named or named_elems:
+                # 이름 있는 필드(§1.3) / loose 2차 pass: 생략 분기 전면 허용
+                yield (False if subtype == TAG_BOOL else 0), i
+            elif size == 1:
+                # 배열 bare 원소의 생략 분기는 **1바이트 태그에만** 존재
+                # (es_values 의 0 드롭아웃: 02 뒤 payload 없음).
+                # wide 스칼라(enum 등)에 생략 분기를 주면 enum 값
+                # 0x0100~0x04FF 전 구간(payload 첫 바이트가 1바이트 태그와
+                # 겹침)이 "0 + int8" 해석과 자동 재정렬되어 모호해진다 —
+                # 실측상 0 드롭아웃은 항상 짧은 1바이트 태그로 기록되므로
+                # wide 생략은 존재하지 않는 것으로 확정.
                 if i < end and raw[i] <= TAG_STRUCT:
                     yield 0, i
-                elif i + size <= end:
-                    yield struct.unpack(fmt, raw[i:i + size])[0], i + size
-                return
-            if i + size <= end:                   # 분기 A: payload 존재
-                yield struct.unpack(fmt, raw[i:i + size])[0], i + size
-            # 분기 B: 생략(값 0/FALSE) — 이름 있는 필드뿐 아니라 배열의 bare
-            # 원소에도 실측 관측됨 (es_values 의 0 드롭아웃: 02 뒤 payload 없음).
-            # 잘못된 생략 분기는 payload 첫 바이트가 유효 태그가 아닐 때 즉사한다.
-            yield (False if subtype == TAG_BOOL else 0), i
+            elif not has_payload:
+                note(i, f'payload({size}B)가 경계(n-4)를 넘음')
         elif subtype == TAG_STRING:
             j = raw.find(0, i, end)
             if j != -1:
@@ -130,12 +132,52 @@ def _parse_pass(raw, node_budget, named_elems):
         else:
             note(i - 1, f'미지 SubType 0x{subtype:02x}')
 
-    def _string_elem_alts(i, j):
-        """fallback 모드의 0x09 배열 원소: bare 문자열(우선) + 이름있는 원소."""
-        yield raw[i + 1:j].decode('utf-8', 'replace'), j + 1
-        name = raw[i + 1:j].decode()
-        for val, k2 in gen_value(j + 2, raw[j + 1], named=True):
-            yield {name: val}, k2
+    def elem_alts(i, t, dom):
+        """배열 원소 후보들: (값, 다음위치, 원소 확정 후 지배태그).
+
+        배열 동질성(§1.6): 한 배열의 원소는 전부 같은 태그(dom)여야 하고,
+        유일한 예외는 지배 태그와 다른 1바이트 태그가 payload 없이 나타나는
+        '0 마커'다. 이 제약이 드롭아웃/위험구간 enum 의 자기정렬 모호성을
+        결정적으로 제거한다. loose pass(named_elems)에서는 제약 해제.
+        """
+        if t == TAG_STRING:
+            j = raw.find(0, i + 1, end)
+            if j == -1:
+                note(i + 1, '배열 문자열 원소의 NUL 종결자 없음')
+                return
+            if dom in (None, TAG_STRING) or named_elems:
+                yield raw[i + 1:j].decode('utf-8', 'replace'), j + 1, TAG_STRING
+            if named_elems and NAME_RE.match(raw[i + 1:j]) and j + 1 < end:
+                name = raw[i + 1:j].decode()
+                for val, k2 in gen_value(j + 2, raw[j + 1], named=True):
+                    yield {name: val}, k2, dom
+            return
+        if t in SCALARS:
+            fmt, size = SCALARS[t]
+            emitted = False
+            if (dom in (None, t) or named_elems) and i + 1 + size <= end:
+                yield (struct.unpack(fmt, raw[i + 1:i + 1 + size])[0],
+                       i + 1 + size, t if dom is None else dom)
+                emitted = True
+            if size == 1 and (dom is None or dom != t or named_elems):
+                yield 0, i + 1, dom               # 0 마커 (payload 없음)
+                emitted = True
+            elif named_elems:
+                yield (False if t == TAG_BOOL else 0), i + 1, dom
+                emitted = True
+            if not emitted:
+                note(i, f'배열 동질성 위반 또는 경계 초과: 0x{t:02x} '
+                        f'(지배 태그 0x{dom:02x})' if dom is not None
+                     else f'payload({size}B)가 경계(n-4)를 넘음')
+            return
+        if t in (TAG_STRUCT, TAG_ARRAY):
+            if dom in (None, t) or named_elems:
+                for v, p in gen_container(i + 1, t == TAG_STRUCT):
+                    yield v, p, t
+            else:
+                note(i, f'배열 동질성 위반: 0x{t:02x} 원소 (지배 태그 0x{dom:02x})')
+            return
+        note(i, f'미지 SubType 0x{t:02x}')
 
     def gen_container(i0, is_struct):
         """struct/array 본문을 원소 단위 '반복 + 명시적 백트래킹'으로 파싱.
@@ -145,7 +187,7 @@ def _parse_pass(raw, node_budget, named_elems):
         막히면 가장 최근 원소의 다음 대안으로 되감는다. 재귀는 중첩
         (struct 안의 array 등) 깊이에만 쌓인다.
         """
-        items, iters, labels = [], [], []
+        items, iters, labels, doms = [], [], [], []
         i = i0
 
         def backtrack():
@@ -156,11 +198,13 @@ def _parse_pass(raw, node_budget, named_elems):
                 path.pop()
                 if nxt is not None:
                     items[-1] = (items[-1][0], nxt[0]) if is_struct else nxt[0]
+                    doms[-1] = nxt[2]
                     i = nxt[1]
                     return True
                 iters.pop()
                 items.pop()
                 labels.pop()
+                doms.pop()
             return False
 
         while True:
@@ -205,23 +249,10 @@ def _parse_pass(raw, node_budget, named_elems):
                     continue
                 name = nm.decode()
                 label = name
-                it = gen_value(k + 1, raw[k], named=True)
-            elif t == TAG_STRING:
-                j = raw.find(0, i + 1, end)
-                if j == -1:
-                    note(i + 1, '배열 문자열 원소의 NUL 종결자 없음')
-                    if not backtrack():
-                        return
-                    continue
+                it = ((v, p, None) for v, p in gen_value(k + 1, raw[k], named=True))
+            else:                                 # 배열 원소 (동질성 규칙 적용)
                 label = f'[{len(items)}]'
-                if named_elems and NAME_RE.match(raw[i + 1:j]) and j + 1 < end:
-                    it = _string_elem_alts(i, j)
-                else:
-                    # 실측 기본: bare 문자열 값 원소 (단일 분기)
-                    it = iter(((raw[i + 1:j].decode('utf-8', 'replace'), j + 1),))
-            else:                                 # 타입태그 + 값 원소
-                label = f'[{len(items)}]'
-                it = gen_value(i + 1, t, named=False)
+                it = elem_alts(i, t, doms[-1] if doms else None)
 
             path.append(label)
             first = next(it, None)
@@ -233,6 +264,7 @@ def _parse_pass(raw, node_budget, named_elems):
             items.append((name, first[0]) if is_struct else first[0])
             iters.append(it)
             labels.append(label)
+            doms.append(first[2])
             i = first[1]
 
     def gen_struct(i):
