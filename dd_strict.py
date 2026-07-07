@@ -352,6 +352,51 @@ def hexdump(raw, pos, radius=24):
     return '\n'.join(lines)
 
 
+def render_readable(tree, indent=0):
+    """디코딩 트리를 사람이 읽는 중첩 텍스트로 렌더 (스펙 §2 형식).
+
+    { key = value } 중첩. 배열은 [ ], 구조체는 { }, 문자열은 "..." 로.
+    """
+    pad = '  ' * indent
+    if isinstance(tree, dict):
+        if not tree:
+            return '{}'
+        lines = ['{']
+        for k, v in tree.items():
+            lines.append(f'{pad}  {k} = {render_readable(v, indent + 1)}')
+        lines.append(pad + '}')
+        return '\n'.join(lines)
+    if isinstance(tree, list):
+        if not tree:
+            return '[]'
+        # 스칼라만 있으면 한 줄, 아니면 여러 줄
+        if all(not isinstance(x, (dict, list)) for x in tree):
+            inner = ', '.join(_scalar(x) for x in tree)
+            return f'[{inner}]' if len(inner) <= 100 else _multiline_list(tree, pad, indent)
+        return _multiline_list(tree, pad, indent)
+    return _scalar(tree)
+
+
+def _multiline_list(tree, pad, indent):
+    lines = ['[']
+    for x in tree:
+        lines.append(f'{pad}  {render_readable(x, indent + 1)},')
+    lines.append(pad + ']')
+    return '\n'.join(lines)
+
+
+def _scalar(v):
+    if isinstance(v, str):
+        return f'"{v}"'
+    if isinstance(v, bool):
+        return 'TRUE' if v else 'FALSE'
+    if isinstance(v, float):
+        return f'{v:.10g}'
+    if v is None:
+        return '<undef>'
+    return str(v)
+
+
 def _dump_field_hex(raw, fieldname, width=64):
     """필드명 앵커(09+name+00)를 찾아 그 SubType+값 바이트를 hex 로 덤프.
 
@@ -511,6 +556,12 @@ def main():
     ap.add_argument('-v', '--verbose', action='store_true')
     ap.add_argument('--max-diag', type=int, default=5,
                     help='상세 진단을 출력할 문제 파일 수 (기본 5)')
+    ap.add_argument('--out-dir', metavar='DIR',
+                    help='디코딩 결과를 파일별 사람이 읽는 .txt 로 DIR 에 저장')
+    ap.add_argument('--json', metavar='PATH',
+                    help='디코딩 결과 전체를 하나의 JSON(파일명→트리)으로 저장')
+    ap.add_argument('--print', dest='print_match', metavar='SUBSTR',
+                    help='이름에 SUBSTR 이 든 파일의 디코딩 트리를 화면에 출력')
     args = ap.parse_args()
 
     stats = {'unique': 0, 'ambiguous': 0, 'failed': 0, 'budget': 0}
@@ -518,6 +569,11 @@ def main():
     mismatch = []          # (name, raw, strict_tree)
     problems = []          # (name, raw, res)
     fallback_used = []     # loose fallback 으로만 풀린 파일
+    decoded = {}           # name -> tree (출력용)
+
+    out_dir = Path(args.out_dir) if args.out_dir else None
+    if out_dir:
+        out_dir.mkdir(parents=True, exist_ok=True)
 
     total = 0
     for name, raw in iter_dd(args.paths, args.raw):
@@ -537,6 +593,27 @@ def main():
                 mismatch.append((name, raw, heur_tree, res.trees[0]))
         else:
             problems.append((name, raw, res))
+
+        # 디코딩 결과 수집/출력 (유일해/모호 첫 해)
+        if res.trees:
+            tree = res.trees[0]
+            decoded[name] = tree
+            if args.print_match and args.print_match in name:
+                print(f'\n===== {name} =====')
+                print(render_readable(tree))
+            if out_dir:
+                safe = name.replace('/', '__').replace('::', '__').replace('\\', '__')
+                (out_dir / f'{safe}.txt').write_text(
+                    render_readable(tree), encoding='utf-8')
+
+    if args.json:
+        import json
+        Path(args.json).write_text(
+            json.dumps(decoded, ensure_ascii=False, indent=2, default=str),
+            encoding='utf-8')
+        print(f'[JSON 저장: {args.json}  ({len(decoded)}개 파일)]')
+    if out_dir:
+        print(f'[텍스트 저장: {out_dir}/  ({len(decoded)}개 .txt)]')
 
     print(f'\n{"=" * 64}')
     print(f'검사: 바이너리 .dd {total}개')
