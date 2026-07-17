@@ -114,6 +114,16 @@
   .g-trailer{--c-fg:var(--r-trailer);--c-bg:var(--r-trailer-bg)}
   .g-plain{--c-fg:var(--ink-soft);--c-bg:var(--bg-sunken)}
 
+  /* 문맥 블록(흐리게) + 특이 지점 프레임 */
+  .grp.ctx{opacity:.42}
+  .hot{display:flex;align-items:stretch;padding:12px 10px 8px;margin-right:8px;margin-top:6px;
+    border:2px dashed var(--accent);border-radius:12px;position:relative;flex-shrink:0}
+  .hot::before{content:attr(data-label);position:absolute;top:-9px;left:10px;font-size:10px;font-weight:800;
+    letter-spacing:.08em;background:var(--bg-raise);color:var(--accent-ink);padding:0 7px;
+    text-transform:uppercase;white-space:nowrap;font-family:var(--mono)}
+  .cmp .hot::before{background:var(--bg-raise)}
+  .strip.has-hot{padding-top:8px}
+
   .note{font-size:13px;color:var(--ink-soft);margin:14px 0 0}
   .note b{color:var(--ink)}
 
@@ -205,6 +215,8 @@
       <span class="lg"><span class="sw" style="background:var(--r-value)"></span>값</span>
       <span class="lg"><span class="sw" style="background:var(--r-container)"></span>컨테이너</span>
       <span class="lg"><span class="sw" style="background:var(--r-end)"></span>END(0x00)</span>
+      <span class="lg"><span class="sw" style="background:var(--ink-faint);opacity:.4"></span>흐린 칸 = 앞뒤 문맥</span>
+      <span class="lg"><span class="sw" style="background:transparent;border:2px dashed var(--accent)"></span>점선 프레임 = 특이 지점</span>
     </div>
   </div>
 </header>
@@ -249,31 +261,58 @@
   <p class="sub">본문은 이 패턴의 반복입니다. 이름 있는 필드는 <b>항상 0x09 로 시작</b>합니다.</p>
 
   <div class="strip-card">
-    <div class="strip">
-      <div class="grp g-type">
+    <div class="strip has-hot">
+      <div class="grp g-container ctx">
+        <div class="cells"><div class="cell">0B</div></div>
+        <div class="glabel">STRUCT 열기</div>
+      </div>
+      <div class="grp g-plain ctx">
+        <div class="cells"><div class="cell ellip wide" style="min-width:84px">… 앞 필드들</div></div>
+        <div class="glabel" style="--c-fg:var(--ink-soft)">문맥</div>
+      </div>
+      <div class="hot" data-label="필드 하나 = 네 조각">
+        <div class="grp g-type">
+          <div class="cells"><div class="cell">09</div></div>
+          <div class="glabel">Type<span class="sz">1B 고정</span></div>
+        </div>
+        <div class="grp g-name">
+          <div class="cells">
+            <div class="cell">l</div><div class="cell">e</div><div class="cell">n</div><div class="cell">s</div>
+            <div class="cell ellip">…</div><div class="cell">00</div>
+          </div>
+          <div class="glabel">Name (ASCII)<span class="sz">가변 · NUL 종료</span></div>
+        </div>
+        <div class="grp g-subtype">
+          <div class="cells"><div class="cell">08</div></div>
+          <div class="glabel">SubType<span class="sz">1B — 값 타입</span></div>
+        </div>
+        <div class="grp g-value">
+          <div class="cells">
+            <div class="cell">3F</div><div class="cell">D0</div><div class="cell">00</div><div class="cell">00</div>
+            <div class="cell">00</div><div class="cell">00</div><div class="cell">00</div><div class="cell">00</div>
+          </div>
+          <div class="glabel">Value<span class="sz">SubType 이 폭 결정</span></div>
+        </div>
+      </div>
+      <div class="grp g-type ctx">
         <div class="cells"><div class="cell">09</div></div>
-        <div class="glabel">Type<span class="sz">1B 고정</span></div>
+        <div class="glabel">다음 필드</div>
       </div>
-      <div class="grp g-name">
-        <div class="cells">
-          <div class="cell">l</div><div class="cell">e</div><div class="cell">n</div><div class="cell">s</div>
-          <div class="cell ellip">…</div><div class="cell">00</div>
-        </div>
-        <div class="glabel">Name (ASCII)<span class="sz">가변 · NUL 종료</span></div>
+      <div class="grp g-name ctx">
+        <div class="cells"><div class="cell wide">"if_sim_mode"</div><div class="cell">00</div></div>
+        <div class="glabel">이름</div>
       </div>
-      <div class="grp g-subtype">
-        <div class="cells"><div class="cell">08</div></div>
-        <div class="glabel">SubType<span class="sz">1B — 값 타입</span></div>
+      <div class="grp g-plain ctx">
+        <div class="cells"><div class="cell ellip">…</div></div>
+        <div class="glabel" style="--c-fg:var(--ink-soft)">&nbsp;</div>
       </div>
-      <div class="grp g-value">
-        <div class="cells">
-          <div class="cell">3F</div><div class="cell">D0</div><div class="cell">00</div><div class="cell">00</div>
-          <div class="cell">00</div><div class="cell">00</div><div class="cell">00</div><div class="cell">00</div>
-        </div>
-        <div class="glabel">Value<span class="sz">SubType 이 폭 결정</span></div>
+      <div class="grp g-end ctx">
+        <div class="cells"><div class="cell">00</div></div>
+        <div class="glabel">END</div>
       </div>
     </div>
-    <p class="note">이 예: SubType <b>0x08 = FLOAT64</b> → 값 8바이트 big-endian → <code>0.25</code>. 다바이트 수치는 전부 <b>big-endian</b>.</p>
+    <p class="note">이 예: SubType <b>0x08 = FLOAT64</b> → 값 8바이트 big-endian → <code>0.25</code>.
+    필드가 끝나면 <b>구분자 없이</b> 곧바로 다음 필드의 <code>09</code> 가 이어지고, 형제가 더 없으면 컨테이너를 닫는 <code>00</code> 이 옵니다.</p>
   </div>
 </section>
 
@@ -336,16 +375,24 @@
 
   <div class="strip-card">
     <div class="strip-title"><span class="tt" style="background:var(--r-container-bg);color:var(--r-container)">enum 배열</span> es_values 실측</div>
-    <div class="strip">
-      <div class="grp g-container"><div class="cells"><div class="cell">0A</div></div><div class="glabel">ARRAY</div></div>
-      <div class="grp g-subtype"><div class="cells"><div class="cell">05</div></div><div class="glabel">enum</div></div>
-      <div class="grp g-value"><div class="cells"><div class="cell">23</div><div class="cell">3D</div></div><div class="glabel">9021</div></div>
-      <div class="grp g-subtype"><div class="cells"><div class="cell">05</div></div><div class="glabel">enum</div></div>
-      <div class="grp g-value"><div class="cells"><div class="cell">19</div><div class="cell">19</div></div><div class="glabel">6425</div></div>
-      <div class="grp g-plain"><div class="cells"><div class="cell ellip">…</div></div><div class="glabel" style="--c-fg:var(--ink-soft)">반복</div></div>
-      <div class="grp g-end"><div class="cells"><div class="cell">00</div></div><div class="glabel">END</div></div>
+    <div class="strip has-hot">
+      <div class="grp g-type ctx"><div class="cells"><div class="cell">09</div></div><div class="glabel">Type</div></div>
+      <div class="grp g-name ctx"><div class="cells"><div class="cell wide">"es_values"</div><div class="cell">00</div></div><div class="glabel">필드 이름</div></div>
+      <div class="grp g-container"><div class="cells"><div class="cell">0A</div></div><div class="glabel">SubType<span class="sz">= ARRAY</span></div></div>
+      <div class="hot" data-label="원소 = SubType+값 반복 · 이름 없음">
+        <div class="grp g-subtype"><div class="cells"><div class="cell">05</div></div><div class="glabel">enum</div></div>
+        <div class="grp g-value"><div class="cells"><div class="cell">23</div><div class="cell">3D</div></div><div class="glabel">9021</div></div>
+        <div class="grp g-subtype"><div class="cells"><div class="cell">05</div></div><div class="glabel">enum</div></div>
+        <div class="grp g-value"><div class="cells"><div class="cell">19</div><div class="cell">19</div></div><div class="glabel">6425</div></div>
+        <div class="grp g-plain"><div class="cells"><div class="cell ellip">…</div></div><div class="glabel" style="--c-fg:var(--ink-soft)">반복</div></div>
+      </div>
+      <div class="grp g-end"><div class="cells"><div class="cell">00</div></div><div class="glabel">END<span class="sz">배열 닫기</span></div></div>
+      <div class="grp g-type ctx"><div class="cells"><div class="cell">09</div></div><div class="glabel">다음 필드</div></div>
+      <div class="grp g-name ctx"><div class="cells"><div class="cell wide">"next_field"</div><div class="cell">00</div></div><div class="glabel">이름</div></div>
+      <div class="grp g-plain ctx"><div class="cells"><div class="cell ellip">…</div></div><div class="glabel" style="--c-fg:var(--ink-soft)">&nbsp;</div></div>
     </div>
-    <p class="note">원소는 <b>같은 범주</b>(수치/문자열/컨테이너)를 유지합니다. 범주가 섞이면 디싱크 신호.</p>
+    <p class="note">배열도 결국 <b>이름 있는 필드의 값</b>입니다 — <code>09 "es_values" 00</code> 뒤 SubType 자리에 <code>0A</code> 가 온 것.
+    프레임 안(원소들)만 이름이 없고, END 뒤에는 구분자 없이 바로 형제 필드가 이어집니다. 원소는 <b>같은 범주</b>(수치/문자열/컨테이너)를 유지 — 섞이면 디싱크 신호.</p>
   </div>
 </section>
 
@@ -362,19 +409,44 @@
       <div class="compare">
         <div class="cmp ng"><span class="tag">❌ 고정폭 그대로 소비</span>
           <div class="strip">
+            <div class="grp g-plain ctx"><div class="cells"><div class="cell ellip wide" style="min-width:76px">… 앞 필드</div></div><div class="glabel" style="--c-fg:var(--ink-soft)">문맥</div></div>
+            <div class="grp g-type"><div class="cells"><div class="cell">09</div></div><div class="glabel">Type</div></div>
+            <div class="grp g-name"><div class="cells"><div class="cell wide">"nr_of_used_samples"</div><div class="cell">00</div></div><div class="glabel">이 필드 이름</div></div>
             <div class="grp g-subtype"><div class="cells"><div class="cell">04</div></div><div class="glabel">int8</div></div>
-            <div class="grp g-value"><div class="cells"><div class="cell strike">09</div></div><div class="glabel">"값"?</div></div>
-            <div class="grp g-name"><div class="cells"><div class="cell strike">n</div><div class="cell">e</div><div class="cell">x</div><div class="cell">t</div><div class="cell ellip">…</div><div class="cell">00</div></div><div class="glabel">이름이 깨짐</div></div>
+            <div class="grp g-value"><div class="cells"><div class="cell strike">09</div></div><div class="glabel">"값"으로 오독</div></div>
+            <div class="grp g-name"><div class="cells"><div class="cell strike">n</div><div class="cell">e</div><div class="cell">x</div><div class="cell">t</div><div class="cell ellip">…</div><div class="cell">00</div></div><div class="glabel">이름 앞글자 깨짐</div></div>
+            <div class="grp g-plain ctx"><div class="cells"><div class="cell ellip wide" style="min-width:96px">… 이후 전부 밀림</div></div><div class="glabel" style="--c-fg:var(--ink-soft)">디싱크</div></div>
           </div>
-          <div class="res">다음 필드의 <code>09</code> 를 값으로 삼킴 → <b>이후 전부 디싱크</b></div>
+          <div class="res">다음 필드의 <code>09</code> 를 값으로 삼킴 → 그 뒤 모든 바이트의 해석이 어긋남</div>
         </div>
         <div class="cmp ok"><span class="tag">✓ 앵커가 보이면 소비 0, 값 0</span>
-          <div class="strip">
-            <div class="grp g-subtype"><div class="cells"><div class="cell">04</div></div><div class="glabel">int8</div></div>
+          <div class="strip has-hot">
+            <div class="grp g-plain ctx"><div class="cells"><div class="cell ellip wide" style="min-width:76px">… 앞 필드</div></div><div class="glabel" style="--c-fg:var(--ink-soft)">문맥</div></div>
             <div class="grp g-type"><div class="cells"><div class="cell">09</div></div><div class="glabel">Type</div></div>
-            <div class="grp g-name"><div class="cells"><div class="cell">n</div><div class="cell">e</div><div class="cell">x</div><div class="cell">t</div><div class="cell ellip">…</div><div class="cell">00</div></div><div class="glabel">다음 필드 이름</div></div>
+            <div class="grp g-name"><div class="cells"><div class="cell wide">"nr_of_used_samples"</div><div class="cell">00</div></div><div class="glabel">이 필드 이름</div></div>
+            <div class="hot" data-label="payload 0바이트 — 값 0으로 확정">
+              <div class="grp g-subtype"><div class="cells"><div class="cell">04</div></div><div class="glabel">int8<span class="sz">뒤에 값 없음</span></div></div>
+            </div>
+            <div class="grp g-type"><div class="cells"><div class="cell">09</div></div><div class="glabel">앵커 감지!</div></div>
+            <div class="grp g-name"><div class="cells"><div class="cell wide">"next_field"</div><div class="cell">00</div></div><div class="glabel">다음 필드 이름</div></div>
+            <div class="grp g-subtype ctx"><div class="cells"><div class="cell">08</div></div><div class="glabel">SubType</div></div>
+            <div class="grp g-value ctx"><div class="cells"><div class="cell">3F</div><div class="cell ellip">…</div></div><div class="glabel">값 8B</div></div>
           </div>
-          <div class="res">값 = <b>0</b>, 바이트 소비 없이 다음 필드로. END(<code>00</code>)가 바로 올 땐 <b>1B 태그(0x01~0x04)에 한해</b> 같은 처리 — enum/bool/float 은 첫 바이트가 00 이어도 실값일 수 있어 제외.</div>
+          <div class="res">값 = <b>0</b>, 바이트 소비 없이 다음 필드로. 이 필드가 struct 의 <b>마지막 멤버</b>면 앵커 대신 END(<code>00</code>)가 바로 오는데, 그땐 <b>1B 태그(0x01~0x04)에 한해</b> 같은 처리 — enum/bool/float 은 첫 바이트가 00 이어도 실값일 수 있어 제외.</div>
+        </div>
+        <div class="cmp ok"><span class="tag">✓ 마지막 멤버 변형 — 앵커 대신 END</span>
+          <div class="strip has-hot">
+            <div class="grp g-type ctx"><div class="cells"><div class="cell">09</div></div><div class="glabel">Type</div></div>
+            <div class="grp g-name"><div class="cells"><div class="cell wide">"repeat_count"</div><div class="cell">00</div></div><div class="glabel">마지막 멤버</div></div>
+            <div class="hot" data-label="payload 0바이트 — 값 0">
+              <div class="grp g-subtype"><div class="cells"><div class="cell">04</div></div><div class="glabel">int8</div></div>
+            </div>
+            <div class="grp g-end"><div class="cells"><div class="cell">00</div></div><div class="glabel">END<span class="sz">struct 닫기</span></div></div>
+            <div class="grp g-type ctx"><div class="cells"><div class="cell">09</div></div><div class="glabel">다음 필드</div></div>
+            <div class="grp g-name ctx"><div class="cells"><div class="cell wide">"sibling"</div><div class="cell">00</div></div><div class="glabel">이름</div></div>
+            <div class="grp g-plain ctx"><div class="cells"><div class="cell ellip">…</div></div><div class="glabel" style="--c-fg:var(--ink-soft)">&nbsp;</div></div>
+          </div>
+          <div class="res"><code>04</code> 바로 뒤가 struct 를 닫는 <code>00</code> — 1바이트 태그라 "생략"이든 "명시적 0 값"이든 결과가 0으로 같아 안전 (first_index/last_index/repeat_count 실측)</div>
         </div>
       </div>
 
@@ -407,23 +479,35 @@ KEY_ANCHOR = re.compile(rb'<span class="st">\x09([A-Za-z_][A-Za-z0-9_.\-]{0,63})
       <div class="compare">
         <div class="cmp ng"><span class="tag">❌ 02 를 태그+payload 로 둘씩 짝지음</span>
           <div class="strip">
+            <div class="grp g-type ctx"><div class="cells"><div class="cell">09</div></div><div class="glabel">Type</div></div>
+            <div class="grp g-name ctx"><div class="cells"><div class="cell wide">"position_nrs"</div><div class="cell">00</div></div><div class="glabel">필드 이름</div></div>
+            <div class="grp g-container ctx"><div class="cells"><div class="cell">0A</div></div><div class="glabel">ARRAY</div></div>
             <div class="grp g-subtype"><div class="cells"><div class="cell">02</div><div class="cell strike">02</div></div><div class="glabel">"int8=2"?</div></div>
             <div class="grp g-subtype"><div class="cells"><div class="cell">03</div><div class="cell strike">04</div></div><div class="glabel">"uint8=4"?</div></div>
             <div class="grp g-value"><div class="cells"><div class="cell strike">02</div><div class="cell ellip">…</div></div><div class="glabel">이후 전부 밀림</div></div>
+            <div class="grp g-end ctx"><div class="cells"><div class="cell strike">00</div></div><div class="glabel">END도 어긋남</div></div>
           </div>
           <div class="res">→ <span class="strike">[2, 4, …]</span> 조용히 오답 (짝수 개면 에러도 안 남)</div>
         </div>
         <div class="cmp ok"><span class="tag">✓ 02/03 = 0 마커 1바이트, 04 = 값 페어</span>
-          <div class="strip">
-            <div class="grp g-subtype"><div class="cells"><div class="cell">02</div></div><div class="glabel">0</div></div>
-            <div class="grp g-subtype"><div class="cells"><div class="cell">02</div></div><div class="glabel">0</div></div>
-            <div class="grp g-subtype"><div class="cells"><div class="cell">03</div></div><div class="glabel">0</div></div>
+          <div class="strip has-hot">
+            <div class="grp g-type ctx"><div class="cells"><div class="cell">09</div></div><div class="glabel">Type</div></div>
+            <div class="grp g-name ctx"><div class="cells"><div class="cell wide">"position_nrs"</div><div class="cell">00</div></div><div class="glabel">필드 이름</div></div>
+            <div class="grp g-container"><div class="cells"><div class="cell">0A</div></div><div class="glabel">ARRAY</div></div>
+            <div class="hot" data-label="0 마커 — 태그 1B만, payload 없음">
+              <div class="grp g-subtype"><div class="cells"><div class="cell">02</div></div><div class="glabel">0</div></div>
+              <div class="grp g-subtype"><div class="cells"><div class="cell">02</div></div><div class="glabel">0</div></div>
+              <div class="grp g-subtype"><div class="cells"><div class="cell">03</div></div><div class="glabel">0</div></div>
+            </div>
             <div class="grp g-value"><div class="cells"><div class="cell">04</div><div class="cell">02</div></div><div class="glabel">2</div></div>
             <div class="grp g-value"><div class="cells"><div class="cell">04</div><div class="cell">02</div></div><div class="glabel">2</div></div>
             <div class="grp g-value"><div class="cells"><div class="cell">04</div><div class="cell">03</div></div><div class="glabel">3</div></div>
             <div class="grp g-plain"><div class="cells"><div class="cell ellip">…</div></div><div class="glabel" style="--c-fg:var(--ink-soft)">&nbsp;</div></div>
+            <div class="grp g-end"><div class="cells"><div class="cell">00</div></div><div class="glabel">END</div></div>
+            <div class="grp g-type ctx"><div class="cells"><div class="cell">09</div></div><div class="glabel">다음 필드</div></div>
+            <div class="grp g-name ctx"><div class="cells"><div class="cell wide">"next_field"</div><div class="cell">00</div></div><div class="glabel">이름</div></div>
           </div>
-          <div class="res">→ <b>[0, 0, 0, 2, 2, 3, …]</b> (position_nrs 실측, 단조증가로 검산됨)</div>
+          <div class="res">→ <b>[0, 0, 0, 2, 2, 3, …]</b> (position_nrs 실측, 단조증가로 검산됨). 배열이 끝나야 END 가 제자리에 맞고 다음 필드로 정확히 이어집니다.</div>
         </div>
       </div>
 
@@ -456,22 +540,36 @@ KEY_ANCHOR = re.compile(rb'<span class="st">\x09([A-Za-z_][A-Za-z0-9_.\-]{0,63})
       <p>이름 NUL <b>바로 다음 바이트</b>가 컨테이너(<code>0A</code>/<code>0B</code>)면 "이름+컨테이너", 아니면 bare 문자열 값.</p>
       <div class="compare">
         <div class="cmp ok"><span class="tag">✓ 형태 A — post-NUL ≠ 컨테이너 → bare 문자열</span>
-          <div class="strip">
+          <div class="strip has-hot">
+            <div class="grp g-type ctx"><div class="cells"><div class="cell">09</div></div><div class="glabel">Type</div></div>
+            <div class="grp g-name ctx"><div class="cells"><div class="cell wide">"valid_values"</div><div class="cell">00</div></div><div class="glabel">필드 이름</div></div>
             <div class="grp g-container"><div class="cells"><div class="cell">0A</div></div><div class="glabel">ARRAY</div></div>
-            <div class="grp g-value"><div class="cells"><div class="cell">09</div><div class="cell wide">"TRUE"</div><div class="cell">00</div></div><div class="glabel">문자열</div></div>
-            <div class="grp g-value"><div class="cells"><div class="cell" style="outline:2.5px solid var(--accent);outline-offset:1px">09</div><div class="cell wide">"TRUE"</div><div class="cell">00</div></div><div class="glabel">문자열</div></div>
+            <div class="grp g-value"><div class="cells"><div class="cell">09</div><div class="cell wide">"TRUE"</div><div class="cell">00</div></div><div class="glabel">문자열 원소</div></div>
+            <div class="hot" data-label="판별: NUL 직후 1바이트">
+              <div class="grp g-value"><div class="cells"><div class="cell" style="outline:2.5px solid var(--accent);outline-offset:1px">09</div><div class="cell wide">"TRUE"</div><div class="cell">00</div></div><div class="glabel">≠ 0A/0B → bare 문자열</div></div>
+            </div>
             <div class="grp g-end"><div class="cells"><div class="cell">00</div></div><div class="glabel">END</div></div>
+            <div class="grp g-type ctx"><div class="cells"><div class="cell">09</div></div><div class="glabel">다음 필드</div></div>
+            <div class="grp g-name ctx"><div class="cells"><div class="cell wide">"next_field"</div><div class="cell">00</div></div><div class="glabel">이름</div></div>
           </div>
-          <div class="res">NUL 뒤가 <code>09</code>(다음 문자열) → <b>["TRUE", "TRUE"]</b></div>
+          <div class="res">NUL 뒤가 <code>09</code>(다음 문자열의 시작) → <b>["TRUE", "TRUE"]</b></div>
         </div>
         <div class="cmp ok"><span class="tag">✓ 형태 B — post-NUL = 0A/0B → 이름+컨테이너</span>
-          <div class="strip">
+          <div class="strip has-hot">
+            <div class="grp g-type ctx"><div class="cells"><div class="cell">09</div></div><div class="glabel">Type</div></div>
+            <div class="grp g-name ctx"><div class="cells"><div class="cell wide">"detector"</div><div class="cell">00</div></div><div class="glabel">필드 이름</div></div>
             <div class="grp g-container"><div class="cells"><div class="cell">0A</div></div><div class="glabel">ARRAY</div></div>
             <div class="grp g-name"><div class="cells"><div class="cell">09</div><div class="cell wide">"abc"</div><div class="cell">00</div></div><div class="glabel">원소 이름</div></div>
-            <div class="grp g-container"><div class="cells"><div class="cell" style="outline:2.5px solid var(--accent);outline-offset:1px">0B</div><div class="cell ellip">…</div><div class="cell" style="--c-fg:var(--r-end);--c-bg:var(--r-end-bg)">00</div></div><div class="glabel">STRUCT</div></div>
-            <div class="grp g-end"><div class="cells"><div class="cell">00</div></div><div class="glabel">END</div></div>
+            <div class="hot" data-label="판별: NUL 직후 1바이트">
+              <div class="grp g-container"><div class="cells"><div class="cell" style="outline:2.5px solid var(--accent);outline-offset:1px">0B</div></div><div class="glabel">= 0B → 이름+STRUCT</div></div>
+            </div>
+            <div class="grp g-plain"><div class="cells"><div class="cell ellip wide" style="min-width:96px">… struct 멤버들</div></div><div class="glabel" style="--c-fg:var(--ink-soft)">중첩 내용</div></div>
+            <div class="grp g-end"><div class="cells"><div class="cell">00</div></div><div class="glabel">END<span class="sz">struct 닫기</span></div></div>
+            <div class="grp g-end"><div class="cells"><div class="cell">00</div></div><div class="glabel">END<span class="sz">배열 닫기</span></div></div>
+            <div class="grp g-type ctx"><div class="cells"><div class="cell">09</div></div><div class="glabel">다음 필드</div></div>
+            <div class="grp g-name ctx"><div class="cells"><div class="cell wide">"next_field"</div><div class="cell">00</div></div><div class="glabel">이름</div></div>
           </div>
-          <div class="res">NUL 뒤가 <code>0B</code> → <b>[{"abc": {…}}]</b> (detector 맵 실측)</div>
+          <div class="res">NUL 뒤가 <code>0B</code> → <b>[{"abc": {…}}]</b> (detector 맵 실측). END 가 <b>두 번</b> — 안쪽 struct 닫기, 그다음 배열 닫기.</div>
         </div>
         <div class="cmp ng"><span class="tag">❌ 판별 없이 읽으면</span>
           <div class="res" style="margin-top:0">bare 문자열들을 둘씩 짝지어 <span class="strike"><code>{TRUE: "TRUE"}</code></span> 로 오독 — 짝수 개면 에러 없이 조용히 틀립니다. 테두리 친 <b>post-NUL 1바이트</b>가 두 오독을 모두 차단.</div>
@@ -503,14 +601,22 @@ KEY_ANCHOR = re.compile(rb'<span class="st">\x09([A-Za-z_][A-Za-z0-9_.\-]{0,63})
       <p>값이 int8 범위(≤127)를 넘으면 같은 배열 안에서 enum(2B)으로 승격됩니다. <b>원소마다 자기 태그가 폭을 정하므로</b> 섞여도 파싱은 결정적입니다.</p>
       <div class="compare">
         <div class="cmp ok"><span class="tag">✓ ratios 실측 (+5 등차수열)</span>
-          <div class="strip">
+          <div class="strip has-hot">
+            <div class="grp g-type ctx"><div class="cells"><div class="cell">09</div></div><div class="glabel">Type</div></div>
+            <div class="grp g-name ctx"><div class="cells"><div class="cell wide">"ratios"</div><div class="cell">00</div></div><div class="glabel">필드 이름</div></div>
+            <div class="grp g-container"><div class="cells"><div class="cell">0A</div></div><div class="glabel">ARRAY</div></div>
             <div class="grp g-value"><div class="cells"><div class="cell">04</div><div class="cell">22</div></div><div class="glabel">34 · 1B</div></div>
             <div class="grp g-value"><div class="cells"><div class="cell">04</div><div class="cell">27</div></div><div class="glabel">39 · 1B</div></div>
             <div class="grp g-plain"><div class="cells"><div class="cell ellip">…</div></div><div class="glabel" style="--c-fg:var(--ink-soft)">&nbsp;</div></div>
-            <div class="grp g-value"><div class="cells"><div class="cell">04</div><div class="cell">7C</div></div><div class="glabel">124 · 1B</div></div>
-            <div class="grp g-subtype"><div class="cells"><div class="cell">05</div><div class="cell">00</div><div class="cell">81</div></div><div class="glabel">129 · 2B ↑승격</div></div>
+            <div class="hot" data-label="폭 전환 지점 — int8 → enum 승격">
+              <div class="grp g-value"><div class="cells"><div class="cell">04</div><div class="cell">7C</div></div><div class="glabel">124 · 1B</div></div>
+              <div class="grp g-subtype"><div class="cells"><div class="cell">05</div><div class="cell">00</div><div class="cell">81</div></div><div class="glabel">129 · 2B</div></div>
+            </div>
             <div class="grp g-subtype"><div class="cells"><div class="cell">05</div><div class="cell">00</div><div class="cell">86</div></div><div class="glabel">134 · 2B</div></div>
             <div class="grp g-plain"><div class="cells"><div class="cell ellip">…</div></div><div class="glabel" style="--c-fg:var(--ink-soft)">&nbsp;</div></div>
+            <div class="grp g-end"><div class="cells"><div class="cell">00</div></div><div class="glabel">END</div></div>
+            <div class="grp g-type ctx"><div class="cells"><div class="cell">09</div></div><div class="glabel">다음 필드</div></div>
+            <div class="grp g-name ctx"><div class="cells"><div class="cell wide">"next_field"</div><div class="cell">00</div></div><div class="glabel">이름</div></div>
           </div>
           <div class="res">127 을 넘는 <b>128부터 <code>05</code>(enum, 2B)</b> 로 — 값은 그냥 이어짐: [34, 39, …, 124, <b>129, 134</b>, …]</div>
         </div>
