@@ -669,6 +669,121 @@ solutions = enumerate_all_parses(raw[<span class="nm">4</span>:-<span class="nm"
   </div>
 </section>
 
+<!-- 8. 근본 해법 -->
+<section>
+  <div class="sec-head"><span class="sec-num">08</span><h2>근본 해법 — 예외 4개는 공리 2개였다</h2></div>
+  <p class="sub">예외들은 하드코딩이 아니라 <b>잘못된 렌즈의 그림자</b>였습니다. "태그마다 폭이 고정이고 필드는
+  스키마 타입을 쓴다"고 보면 예외 4개가 필요하지만, 렌즈를 바꾸면 전부 사라집니다.
+  (<code>dd_unified.py</code> 로 구현, <code>dd_prove.py</code> 로 실행 증명)</p>
+
+  <div class="grid2">
+    <div class="card">
+      <h3 style="margin-top:0"><span style="color:var(--accent-ink)">공리 A1</span> — 값이 태그를 고른다 (최소 폭 인코딩)</h3>
+      <p style="margin-bottom:0">수치 태그는 타입이 아니라 <b>폭 사다리</b>다:
+      <code>0x02/0x03</code>=0B(값 0) → <code>0x04</code>=1B → <code>0x05</code>=2B(int16) →
+      <code>0x06</code>=4B(int32) → <code>0x08</code>=8B. 인코더는 값이 들어가는 최소 폭을 고른다.
+      "ENUM"·"BOOL" 이라는 이름은 유물 — <code>logical_scan_id</code>=129366 이 "BOOL"일 리 없다.</p>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0"><span style="color:var(--accent-ink)">공리 A2</span> — 원소 문법</h3>
+      <p style="margin-bottom:0"><code>element := named_container | bare_value</code>.
+      배열 원소 <code>0x09</code> 는 NUL 직후 1바이트가 <code>0A/0B</code> 면 이름+컨테이너.
+      post-NUL 판별(예외 ③)은 이 문법의 <b>LL(1) 룩어헤드</b>일 뿐이다.</p>
+    </div>
+  </div>
+
+  <div class="strip-card" style="margin-top:16px">
+    <div class="strip-title">같은 필드 <code>count</code> — <b>값만 바꾸면 태그가 바뀐다</b> (공리 A1 의 생성 모델)</div>
+    <div class="strip">
+      <div class="grp g-name ctx"><div class="cells"><div class="cell">09</div><div class="cell wide">"count"</div><div class="cell">00</div></div><div class="glabel">이름</div></div>
+      <div class="grp g-subtype"><div class="cells"><div class="cell">02</div></div><div class="glabel">= 0<span class="sz">폭 0</span></div></div>
+    </div>
+    <div class="strip">
+      <div class="grp g-name ctx"><div class="cells"><div class="cell">09</div><div class="cell wide">"count"</div><div class="cell">00</div></div><div class="glabel">이름</div></div>
+      <div class="grp g-value"><div class="cells"><div class="cell">04</div><div class="cell">05</div></div><div class="glabel">= 5<span class="sz">1B</span></div></div>
+    </div>
+    <div class="strip">
+      <div class="grp g-name ctx"><div class="cells"><div class="cell">09</div><div class="cell wide">"count"</div><div class="cell">00</div></div><div class="glabel">이름</div></div>
+      <div class="grp g-value"><div class="cells"><div class="cell">05</div><div class="cell">01</div><div class="cell">2C</div></div><div class="glabel">= 300<span class="sz">2B</span></div></div>
+    </div>
+    <div class="strip">
+      <div class="grp g-name ctx"><div class="cells"><div class="cell">09</div><div class="cell wide">"count"</div><div class="cell">00</div></div><div class="glabel">이름</div></div>
+      <div class="grp g-value"><div class="cells"><div class="cell">06</div><div class="cell">00</div><div class="cell">01</div><div class="cell">F9</div><div class="cell">56</div></div><div class="glabel">= 129366<span class="sz">4B</span></div></div>
+    </div>
+    <p class="note">이 렌즈로 보면 — 예외 ② "배열 0 마커"는 폭 테이블의 한 항목(width=0), 예외 ④ "승격"은
+    최소 폭 선택의 자연스러운 결과, 예외 ① "0값 생략"은 "0 은 0바이트" 원칙의 이름-필드 발현.
+    문서화된 측정치에서 연역까지 됩니다: <code>0x04</code> 이름 필드 1087/1087 이 전부 비영이므로,
+    END-직전 생략 사례(first_index 등)의 태그는 애초에 폭0 태그(02/03)였습니다 — <b>"생략"이란 현상 자체가
+    대부분 폭0 의 다른 이름</b>이었던 것.</p>
+  </div>
+
+  <h3>실행 증명 (dd_prove.py)</h3>
+  <div class="tblwrap">
+    <table>
+      <thead><tr><th>검증</th><th>결과</th></tr></thead>
+      <tbody>
+        <tr><td>selftest — 스펙 실측 패턴 전종 (예제·마커런·승격·이형·짝수함정·END직전)</td><td><b style="color:var(--good)">13/13 ✓</b></td></tr>
+        <tr><td>차분: dd_main ↔ 공리 파서, 생성 코퍼스 3,000파일</td><td><b style="color:var(--good)">불일치 0 ✓</b></td></tr>
+        <tr><td>dd_strict 오라클 — <b>pure 이미지</b>(공리 인코딩) 250파일</td><td><b style="color:var(--good)">250/250 유일해 ✓</b></td></tr>
+        <tr><td>dd_strict 오라클 — wide 생략 포함 이미지 250파일</td><td><b style="color:var(--warn)">244 유일 · 6 모호</b> — 헷지의 취약성 실증</td></tr>
+        <tr><td>변형 퍼즈 — pure 룰에서 모호 발생</td><td><b style="color:var(--good)">0건 ✓</b> (분기가 없어 구성적으로 ≤1해)</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>그래도 남는 한계 — 그리고 그게 왜 "정답"인가</h3>
+  <p class="sub" style="margin-bottom:14px">스펙의 관용 규칙(wide 생략 허용)을 유지하는 한, <b>원리적으로 못 가르는 파일</b>이 존재함을
+  반례로 구성했습니다. 같은 바이트에 두 인코딩이 겹치는 파일입니다:</p>
+
+  <div class="exc" style="margin-top:0">
+    <div class="exc-h"><span class="no">A</span><h3>반례 — float payload 가 우연히 "제로 필드 둘"의 인코딩과 일치</h3></div>
+    <div class="exc-b">
+      <div class="compare">
+        <div class="cmp ok"><span class="tag">해석 1 — payload 로 읽음</span>
+          <div class="strip">
+            <div class="grp g-magic ctx"><div class="cells"><div class="cell wide">17 FA AE 4E</div></div><div class="glabel">MAGIC</div></div>
+            <div class="grp g-container ctx"><div class="cells"><div class="cell">0B</div></div><div class="glabel">열기</div></div>
+            <div class="grp g-name"><div class="cells"><div class="cell">09</div><div class="cell">a</div><div class="cell">00</div></div><div class="glabel">필드 a</div></div>
+            <div class="grp g-subtype"><div class="cells"><div class="cell">08</div></div><div class="glabel">f64</div></div>
+            <div class="grp g-value"><div class="cells"><div class="cell">09</div><div class="cell">62</div><div class="cell">00</div><div class="cell">02</div><div class="cell">09</div><div class="cell">63</div><div class="cell">00</div><div class="cell">02</div></div><div class="glabel">payload 8B</div></div>
+            <div class="grp g-end"><div class="cells"><div class="cell">00</div></div><div class="glabel">END</div></div>
+          </div>
+          <div class="res">→ <code>{a: 1.79e-263}</code> — 경계 정합 ✓ 체크섬 ✓</div>
+        </div>
+        <div class="cmp ok"><span class="tag">해석 2 — 같은 바이트를 생략+필드들로 읽음</span>
+          <div class="strip">
+            <div class="grp g-magic ctx"><div class="cells"><div class="cell wide">17 FA AE 4E</div></div><div class="glabel">MAGIC</div></div>
+            <div class="grp g-container ctx"><div class="cells"><div class="cell">0B</div></div><div class="glabel">열기</div></div>
+            <div class="grp g-name"><div class="cells"><div class="cell">09</div><div class="cell">a</div><div class="cell">00</div></div><div class="glabel">필드 a</div></div>
+            <div class="grp g-subtype"><div class="cells"><div class="cell">08</div></div><div class="glabel">f64=0 생략</div></div>
+            <div class="grp g-name"><div class="cells"><div class="cell">09</div><div class="cell">62</div><div class="cell">00</div></div><div class="glabel">필드 b</div></div>
+            <div class="grp g-subtype"><div class="cells"><div class="cell">02</div></div><div class="glabel">= 0</div></div>
+            <div class="grp g-name"><div class="cells"><div class="cell">09</div><div class="cell">63</div><div class="cell">00</div></div><div class="glabel">필드 c</div></div>
+            <div class="grp g-subtype"><div class="cells"><div class="cell">02</div></div><div class="glabel">= 0</div></div>
+            <div class="grp g-end"><div class="cells"><div class="cell">00</div></div><div class="glabel">END</div></div>
+          </div>
+          <div class="res">→ <code>{a:0, b:0, c:0}</code> — 경계 정합 ✓ 체크섬 ✓ (같은 바이트!)</div>
+        </div>
+      </div>
+      <div class="algo">
+        <div class="algo-h"><span class="dot"></span>룰셋별 해 개수 — 모호성의 원천을 정확히 특정<span class="src">dd_prove.py ambig · dd_strict 실판정</span></div>
+        <pre>  반례                              spec룰(현행)  wide생략 제거   pure(공리 A1)   dd_strict
+  A. wide 생략 헷지                      2해           1해            1해         ambiguous
+  B. 폭1 explicit-payload 헷지            2해           2해         0해(거부)      ambiguous</pre>
+        <div class="why"><b>읽는 법:</b> 두 해석은 <b>같은 바이트</b>이므로 순방향이든 역방향이든, 어떤 알고리즘이든
+        원리적으로 못 가릅니다 (인코딩 함수가 비단사인 지점). 근본 해결이란 규칙을 더 쌓는 게 아니라 —
+        ① 공리를 최소로 압축하고(pure 룰은 반례 A 를 1해로, B 를 "인코딩 불가 바이트"로 만든다),
+        ② 남는 병리 입력은 전역 오라클(<code>dd_strict</code> 경계 정합·유일해 검사)로 <b>검출</b>하는 것.
+        지금 저장소가 이미 그 아키텍처이고, 이번 작업은 공리 압축분(<code>dd_unified.py</code>)을 보탠 것입니다.</div>
+      </div>
+      <p style="margin:14px 0 0;font-size:14px;color:var(--ink-soft)"><b>확정까지 남은 측정 1회:</b> 실코퍼스에
+      wide 생략이 실재하는지 (<code>python dd_prove.py measure dumps/</code>) — 카운터가 전부 0 이면 코퍼스는
+      pure 이미지 안이고, 룩어헤드·정규식이 전혀 없는 결정적 파서로 충분합니다. 미결 데이터는 정확히 셋:
+      0x06 제로 1건과 0x08 제로 352건의 인코딩 방식, 그리고 0x01 의 정체.</p>
+    </div>
+  </div>
+</section>
+
 </main>
 
 <footer class="wrap">
