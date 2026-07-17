@@ -1,0 +1,507 @@
+<title>dd_prove.py — 증명은 어떤 논리로 굴러가나</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root{
+    --bg:#f6f8f9; --bg-raise:#ffffff; --bg-sunken:#eef2f3;
+    --ink:#16232a; --ink-soft:#47606c; --ink-faint:#7d95a1;
+    --line:#d6e0e4; --line-soft:#e5edef;
+    --accent:#0e8ea3; --accent-ink:#0a6f80;
+    --shadow:0 1px 2px rgba(16,40,50,.05), 0 8px 28px rgba(16,40,50,.07);
+    --enc:#7c3aed;   --enc-bg:#f0e9fb;
+    --byte:#c26a0a;  --byte-bg:#fbeede;
+    --dec:#0e8ea3;   --dec-bg:#dcf1f4;
+    --tree:#0f8a53;  --tree-bg:#e2f4ea;
+    --oracle:#8a5cf0;--oracle-bg:#ece5fc;
+    --good:#16a34a; --good-bg:#e3f5e8;
+    --bad:#c2385a;  --bad-bg:#fbe4ea;
+    --warn:#c2760a; --warn-bg:#fbefd9;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans KR",sans-serif;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#0d1418; --bg-raise:#141e24; --bg-sunken:#0a1013;
+      --ink:#e4edf0; --ink-soft:#9db1bb; --ink-faint:#65808c;
+      --line:#22323a; --line-soft:#1a272e;
+      --accent:#2ec4dc; --accent-ink:#7fe0ef;
+      --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 34px rgba(0,0,0,.45);
+      --enc:#c4a3fb;   --enc-bg:#2c2442;
+      --byte:#f0a94e;  --byte-bg:#3a2a12;
+      --dec:#2ec4dc;   --dec-bg:#0e3138;
+      --tree:#4fd191;  --tree-bg:#123326;
+      --oracle:#b295fb;--oracle-bg:#251d3d;
+      --good:#4fd191; --good-bg:#123326;
+      --bad:#f0768f;  --bad-bg:#3a1622;
+      --warn:#f0b64e; --warn-bg:#33280f;
+    }
+  }
+  :root[data-theme="light"]{
+    --bg:#f6f8f9;--bg-raise:#ffffff;--bg-sunken:#eef2f3;--ink:#16232a;--ink-soft:#47606c;--ink-faint:#7d95a1;
+    --line:#d6e0e4;--line-soft:#e5edef;--accent:#0e8ea3;--accent-ink:#0a6f80;
+    --shadow:0 1px 2px rgba(16,40,50,.05),0 8px 28px rgba(16,40,50,.07);
+    --enc:#7c3aed;--enc-bg:#f0e9fb;--byte:#c26a0a;--byte-bg:#fbeede;--dec:#0e8ea3;--dec-bg:#dcf1f4;
+    --tree:#0f8a53;--tree-bg:#e2f4ea;--oracle:#8a5cf0;--oracle-bg:#ece5fc;
+    --good:#16a34a;--good-bg:#e3f5e8;--bad:#c2385a;--bad-bg:#fbe4ea;--warn:#c2760a;--warn-bg:#fbefd9;
+  }
+  :root[data-theme="dark"]{
+    --bg:#0d1418;--bg-raise:#141e24;--bg-sunken:#0a1013;--ink:#e4edf0;--ink-soft:#9db1bb;--ink-faint:#65808c;
+    --line:#22323a;--line-soft:#1a272e;--accent:#2ec4dc;--accent-ink:#7fe0ef;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 34px rgba(0,0,0,.45);
+    --enc:#c4a3fb;--enc-bg:#2c2442;--byte:#f0a94e;--byte-bg:#3a2a12;--dec:#2ec4dc;--dec-bg:#0e3138;
+    --tree:#4fd191;--tree-bg:#123326;--oracle:#b295fb;--oracle-bg:#251d3d;
+    --good:#4fd191;--good-bg:#123326;--bad:#f0768f;--bad-bg:#3a1622;--warn:#f0b64e;--warn-bg:#33280f;
+  }
+
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{animation:none!important;transition:none!important}}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.62;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1000px;margin:0 auto;padding:0 22px}
+  code,.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+  header.hero{border-bottom:1px solid var(--line);
+    background:radial-gradient(120% 90% at 85% -20%, color-mix(in srgb,var(--accent) 13%, transparent), transparent 60%),var(--bg-raise);
+    position:relative;overflow:hidden}
+  .hero-grid{position:absolute;inset:0;opacity:.5;pointer-events:none;
+    background-image:linear-gradient(var(--line-soft) 1px,transparent 1px),linear-gradient(90deg,var(--line-soft) 1px,transparent 1px);
+    background-size:26px 26px;mask-image:linear-gradient(to bottom,black,transparent 72%)}
+  .hero-in{position:relative;padding:56px 0 44px}
+  .eyebrow{font-family:var(--mono);font-size:12.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--accent-ink);
+    font-weight:600;margin:0 0 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .eyebrow .sig{background:var(--bg-sunken);border:1px solid var(--line);padding:2px 8px;border-radius:6px;letter-spacing:.1em;color:var(--ink-soft)}
+  h1{font-size:clamp(28px,5vw,48px);line-height:1.07;margin:0 0 18px;letter-spacing:-.02em;font-weight:800;text-wrap:balance}
+  h1 .hl{color:var(--accent-ink)}
+  .lead{font-size:clamp(16px,2vw,19px);color:var(--ink-soft);max-width:62ch;margin:0}
+  .toc{display:flex;gap:8px;flex-wrap:wrap;margin-top:26px}
+  .toc a{font-family:var(--mono);font-size:12.5px;text-decoration:none;color:var(--ink-soft);
+    border:1px solid var(--line);background:var(--bg-raise);padding:6px 12px;border-radius:999px;transition:.15s}
+  .toc a:hover{border-color:var(--accent);color:var(--accent-ink);transform:translateY(-1px)}
+
+  section{padding:52px 0;border-bottom:1px solid var(--line-soft)}
+  .sec-head{display:flex;align-items:baseline;gap:14px;margin:0 0 8px}
+  .sec-num{font-family:var(--mono);color:var(--accent);font-weight:700;font-size:15px}
+  h2{font-size:clamp(21px,3.1vw,29px);margin:0;letter-spacing:-.015em;font-weight:750;text-wrap:balance}
+  .sub{color:var(--ink-soft);margin:6px 0 26px;max-width:66ch}
+  h3{font-size:17.5px;margin:30px 0 12px;letter-spacing:-.01em}
+  p{margin:13px 0}
+  .fine{font-size:13.5px;color:var(--ink-faint)}
+
+  .card{background:var(--bg-raise);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:22px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:760px){.grid2{grid-template-columns:1fr}}
+
+  /* ── 왕복 다이어그램 ── */
+  .rt{background:var(--bg-raise);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);
+    padding:28px 24px;display:flex;flex-direction:column;align-items:center;gap:0;overflow-x:auto}
+  .node{border-radius:12px;padding:13px 20px;font-family:var(--mono);font-weight:700;font-size:14px;
+    border:1.5px solid color-mix(in srgb,var(--nc) 40%,transparent);background:var(--nb);color:var(--nc);
+    text-align:center;white-space:nowrap;min-width:200px}
+  .node small{display:block;font-family:var(--sans);font-weight:500;font-size:11.5px;color:var(--ink-faint);margin-top:3px;letter-spacing:0}
+  .n-tree{--nc:var(--tree);--nb:var(--tree-bg)}
+  .n-enc{--nc:var(--enc);--nb:var(--enc-bg)}
+  .n-byte{--nc:var(--byte);--nb:var(--byte-bg)}
+  .n-dec{--nc:var(--dec);--nb:var(--dec-bg)}
+  .conn{display:flex;flex-direction:column;align-items:center;color:var(--ink-faint);font-family:var(--mono);font-size:11.5px;padding:3px 0}
+  .conn .ar{font-size:19px;line-height:1;color:var(--accent);font-weight:800}
+  .conn .lb{margin-top:2px;background:var(--bg-sunken);border:1px solid var(--line-soft);border-radius:5px;padding:1px 8px}
+  .fork{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin:2px 0}
+  .fork .node{min-width:0;font-size:12.5px;padding:10px 13px}
+  .eq{display:inline-flex;align-items:center;gap:8px;font-family:var(--mono);font-weight:700;font-size:13px;
+    background:var(--good-bg);color:var(--good);border:1px solid color-mix(in srgb,var(--good) 40%,transparent);
+    border-radius:999px;padding:6px 15px;margin-top:4px}
+
+  /* ── 부품 카드 ── */
+  .parts{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:760px){.parts{grid-template-columns:1fr}}
+  .part{border:1px solid var(--line);border-radius:12px;background:var(--bg-raise);box-shadow:var(--shadow);overflow:hidden}
+  .part-h{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line-soft);background:var(--pb)}
+  .part-h .fn{font-family:var(--mono);font-weight:700;font-size:13.5px;color:var(--pc)}
+  .part-h .role{margin-left:auto;font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint)}
+  .part-b{padding:14px 16px;font-size:13.5px;color:var(--ink-soft)}
+  .part-b b{color:var(--ink)}
+  .p-enc{--pc:var(--enc);--pb:var(--enc-bg)}
+  .p-byte{--pc:var(--byte);--pb:var(--byte-bg)}
+  .p-dec{--pc:var(--dec);--pb:var(--dec-bg)}
+  .p-oracle{--pc:var(--oracle);--pb:var(--oracle-bg)}
+
+  pre.code{background:var(--bg-sunken);border:1px solid var(--line);border-radius:10px;padding:14px 16px;
+    overflow-x:auto;font-family:var(--mono);font-size:12.5px;line-height:1.7;margin:12px 0 0}
+  pre.code .cm{color:var(--ink-faint)} pre.code .kw{color:var(--enc)} pre.code .fn{color:var(--accent-ink)}
+  pre.code .st{color:var(--tree)} pre.code .nm{color:var(--byte)}
+
+  /* ── 커맨드 도구 카드 ── */
+  .cmd{border:1px solid var(--line);border-radius:13px;background:var(--bg-raise);box-shadow:var(--shadow);overflow:hidden}
+  .cmd+.cmd{margin-top:14px}
+  .cmd-h{display:flex;align-items:center;gap:12px;padding:13px 18px;background:var(--bg-sunken);border-bottom:1px solid var(--line)}
+  .cmd-h .cli{font-family:var(--mono);font-weight:700;font-size:14px;color:var(--ink)}
+  .cmd-h .cli .kw{color:var(--accent-ink)}
+  .cmd-h .pill{margin-left:auto;font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.05em;
+    padding:3px 9px;border-radius:6px;text-transform:uppercase}
+  .pill.p1{background:var(--dec-bg);color:var(--dec)} .pill.p2{background:var(--tree-bg);color:var(--tree)}
+  .pill.p3{background:var(--oracle-bg);color:var(--oracle)} .pill.p4{background:var(--byte-bg);color:var(--byte)}
+  .cmd-b{padding:16px 18px;display:grid;grid-template-columns:auto 1fr;gap:10px 16px;font-size:13.5px}
+  @media(max-width:620px){.cmd-b{grid-template-columns:1fr;gap:4px 0}}
+  .cmd-b dt{font-weight:700;color:var(--ink-faint);font-size:11.5px;letter-spacing:.05em;text-transform:uppercase;padding-top:2px}
+  .cmd-b dd{margin:0;color:var(--ink-soft)}
+  .cmd-b dd b{color:var(--ink)}
+  .cmd-b dd code{background:var(--bg-sunken);border:1px solid var(--line-soft);border-radius:4px;padding:0 5px;font-size:12.5px}
+
+  /* ── 룰셋 3열 ── */
+  .rulesets{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  @media(max-width:720px){.rulesets{grid-template-columns:1fr}}
+  .rs{border:1px solid var(--line);border-radius:12px;padding:16px;background:var(--bg-raise);box-shadow:var(--shadow)}
+  .rs h4{margin:0 0 4px;font-family:var(--mono);font-size:14px}
+  .rs .tagline{font-size:12px;color:var(--ink-faint);margin:0 0 12px;min-height:32px}
+  .rs .branch{font-family:var(--mono);font-size:12px;display:flex;align-items:center;gap:7px;padding:5px 0;border-top:1px dashed var(--line-soft)}
+  .rs .branch .n{font-weight:800;min-width:20px;text-align:center;border-radius:5px;padding:1px 0}
+  .n1{background:var(--good-bg);color:var(--good)} .n2{background:var(--bad-bg);color:var(--bad)}
+  .rs.spec{border-top:3px solid var(--bad)} .rs.nowide{border-top:3px solid var(--warn)} .rs.pure{border-top:3px solid var(--good)}
+
+  /* ── 매핑 표 ── */
+  .tblwrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px}
+  table{border-collapse:collapse;width:100%;font-size:13.5px;min-width:560px}
+  th,td{text-align:left;padding:11px 14px;border-bottom:1px solid var(--line-soft);vertical-align:top}
+  thead th{background:var(--bg-sunken);font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-soft)}
+  tbody tr:last-child td{border-bottom:none}
+  tbody tr:hover{background:var(--bg-sunken)}
+  td .claim{font-family:var(--mono);font-weight:700;color:var(--accent-ink)}
+  code.k{background:var(--bg-sunken);border:1px solid var(--line-soft);border-radius:4px;padding:1px 6px;font-family:var(--mono);font-size:12.5px}
+
+  /* ── 인식론 박스 ── */
+  .epi{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:760px){.epi{grid-template-columns:1fr}}
+  .epi-col{border-radius:12px;padding:18px 20px;border:1px solid var(--line)}
+  .epi-col.can{background:var(--good-bg);border-color:color-mix(in srgb,var(--good) 35%,transparent)}
+  .epi-col.cant{background:var(--bad-bg);border-color:color-mix(in srgb,var(--bad) 32%,transparent)}
+  .epi-col h4{margin:0 0 10px;font-size:15px;display:flex;align-items:center;gap:8px}
+  .epi-col.can h4{color:var(--good)} .epi-col.cant h4{color:var(--bad)}
+  .epi-col ul{margin:0;padding-left:18px;font-size:13.5px;color:var(--ink-soft)}
+  .epi-col li{margin:7px 0}
+  .epi-col li b{color:var(--ink)}
+
+  .callout{border:1px solid var(--line);border-left:4px solid var(--accent);background:var(--bg-sunken);
+    border-radius:10px;padding:15px 18px;font-size:14px;color:var(--ink-soft);margin:16px 0 0}
+  .callout b{color:var(--ink)}
+
+  footer{padding:38px 0 56px;color:var(--ink-faint);font-size:13px;text-align:center}
+  footer code{color:var(--ink-soft)}
+  .theme-btn{position:fixed;top:16px;right:16px;z-index:20;width:40px;height:40px;border-radius:10px;
+    border:1px solid var(--line);background:var(--bg-raise);color:var(--ink);cursor:pointer;font-size:17px;box-shadow:var(--shadow);transition:.15s}
+  .theme-btn:hover{border-color:var(--accent);transform:translateY(-1px)}
+</style>
+
+<button class="theme-btn" id="themeToggle" aria-label="라이트/다크 전환" title="테마 전환">◐</button>
+
+<header class="hero">
+  <div class="hero-grid"></div>
+  <div class="wrap hero-in">
+    <p class="eyebrow"><span>dd_prove.py</span><span class="sig">실행 전 · 논리 지도</span></p>
+    <h1>정답을 모르는 포맷을,<br><span class="hl">무엇을 기준으로 증명하나</span></h1>
+    <p class="lead">이 포맷엔 벤더 스펙이 없습니다. 그래서 <code>dd_prove.py</code> 는 외부 정답과 대조하는 대신,
+    <b>서로 독립인 세 장치가 스스로 만들어내는 일관성</b>으로 규칙을 검증합니다 —
+    왕복(round-trip), 3-파서 차분, 해를 세는 오라클. 실행하기 전에 그 논리부터 그려봅니다.</p>
+    <nav class="toc">
+      <a href="#problem">① 증명의 딜레마</a>
+      <a href="#roundtrip">② 왕복 + 차분</a>
+      <a href="#parts">③ 4개 부품</a>
+      <a href="#rulesets">④ 3개 룰셋</a>
+      <a href="#commands">⑤ 6개 도구</a>
+      <a href="#claims">⑥ 주장 매핑</a>
+      <a href="#epi">⑦ 증명 vs 못함</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+<!-- ① -->
+<section id="problem">
+  <div class="sec-head"><span class="sec-num">01</span><h2>딜레마 — 대조할 "정답"이 없다</h2></div>
+  <p class="sub">보통의 파서 테스트는 "기대 출력"과 비교합니다. 하지만 리버스엔지니어링한 포맷엔 기대 출력의 원천(공식 스펙·레퍼런스 구현)이 없습니다.
+  그러면 파서가 맞는지 무엇으로 아나요? <code>dd_prove.py</code> 의 답은 <b>정답을 바깥에서 찾지 말고, 안에서 만들라</b> 입니다.</p>
+
+  <div class="grid2">
+    <div class="card">
+      <h3 style="margin-top:0">순진한 방법 — 막힌다</h3>
+      <p style="margin-bottom:0"><code>bytes → 파서 → tree</code> 를 얻어도, 이 tree 가 맞는지 대조할 <b>기준 tree</b> 가 없습니다.
+      실코퍼스 605개를 다 돌려 "안 터졌다"고 해도, 조용히 틀리게 읽는 경우(짝수 개 배열 오독 등)를 못 걸러냅니다.</p>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">이 러너의 방법 — 세 개의 자족 장치</h3>
+      <p style="margin-bottom:0"><b>기준 tree 를 먼저 만들고</b> 거기서 바이트를 생성합니다(왕복). 또 <b>독립적으로 짠 파서 셋</b>을
+      서로 대조하고(차분), 파일마다 <b>가능한 해석의 개수</b>를 전수로 셉니다(오라클). 셋 다 외부 정답이 필요 없습니다.</p>
+    </div>
+  </div>
+  <div class="callout"><b>핵심 전환:</b> "파서 출력이 정답과 같은가?"(대조 불가)를 →
+  "<b>트리를 인코딩했다가 다시 디코딩하면 원래 트리로 돌아오는가?</b>"(자기충족)로 바꾼다.
+  이 왕복이 성립하면, 규칙은 최소한 <b>자기 자신과 무모순</b>이다.</div>
+</section>
+
+<!-- ② -->
+<section id="roundtrip">
+  <div class="sec-head"><span class="sec-num">02</span><h2>중심 논리 — 왕복이 정답을 만들고, 차분이 교차검증한다</h2></div>
+  <p class="sub">랜덤 트리에서 시작합니다. 이 트리가 <b>정의상 정답</b>입니다. 인코더로 바이트를 만들고(=이 포맷의 파일),
+  그 바이트를 세 파서로 각각 디코딩해서, <b>전부 원래 트리로 돌아오는지</b> 봅니다.</p>
+
+  <div class="rt">
+    <div class="node n-tree">tree (랜덤 생성, 시드 고정)<small>이것이 "정답" — gen_dict()</small></div>
+    <div class="conn"><span class="ar">↓</span><span class="lb">Enc.members() — 인코더 = 생성 모델</span></div>
+    <div class="node n-byte">bytes = 완전한 .dd 파일<small>wrap(): 매직 + 0B + 멤버들 + 00 + 체크섬</small></div>
+    <div class="conn"><span class="ar">↓</span><span class="lb">세 파서로 각각 디코딩</span></div>
+    <div class="fork">
+      <div class="node n-dec">dd_main<small>휴리스틱</small></div>
+      <div class="node n-dec">unified(safe)<small>공리+룩어헤드</small></div>
+      <div class="node n-dec">unified(pure)<small>공리만</small></div>
+      <div class="node n-oracle" style="--nc:var(--oracle);--nb:var(--oracle-bg)">dd_strict<small>전수 오라클</small></div>
+    </div>
+    <div class="conn"><span class="ar">↓</span><span class="lb">셋의 tree 가 서로 == &amp; 원래 tree 와 == 여야</span></div>
+    <div class="eq">✓ 왕복 성립 → 규칙 무모순 · 파서 동치 &nbsp;/&nbsp; ✗ 어긋나면 그게 반례</div>
+  </div>
+
+  <div class="grid2" style="margin-top:16px">
+    <div class="card">
+      <h3 style="margin-top:0"><span style="color:var(--tree)">왕복 (round-trip)</span></h3>
+      <p style="margin-bottom:0"><code>decode(encode(tree)) == tree</code>. 인코더가 규칙의 <b>생성 방향</b>을, 파서가 <b>해석 방향</b>을 맡습니다.
+      둘이 서로의 역함수면 규칙이 앞뒤로 맞물린 겁니다. 트리를 우리가 만들었으니 정답은 처음부터 손에 있습니다.</p>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0"><span style="color:var(--dec)">차분 (differential)</span></h3>
+      <p style="margin-bottom:0">독립적으로 짠 세 파서가 <b>같은 바이트에 같은 트리</b>를 내면, 한쪽의 우연한 버그가 드러납니다.
+      특히 <code>dd_main</code>(예외 4개가 흩어진 휴리스틱)과 <code>unified</code>(공리 2개)가 일치하면
+      <b>"예외 ≡ 공리"</b> 가 실행으로 확인됩니다.</p>
+    </div>
+  </div>
+  <p class="fine" style="margin-top:14px">시드를 고정하므로 어떤 반례든 <b>재현 가능</b>합니다 — <code>--seed 7</code> 이 실패하면 언제 돌려도 같은 파일에서 실패.</p>
+</section>
+
+<!-- ③ -->
+<section id="parts">
+  <div class="sec-head"><span class="sec-num">03</span><h2>4개 부품 — 러너를 이루는 것</h2></div>
+  <p class="sub">모든 서브커맨드가 이 넷을 조립해 씁니다.</p>
+
+  <div class="parts">
+    <div class="part p-enc">
+      <div class="part-h"><span class="fn">Enc.members()</span><span class="role">인코더 = 생성 모델</span></div>
+      <div class="part-b">
+        규칙을 <b>거꾸로</b> 돌린다: 트리 → 바이트. 여기가 "공리 A1"의 형식화 —
+        값이 태그를 고른다. <b>0 → 폭0 태그</b>(0x02/0x03), int8 → 0x04, int16 → 0x05, int32 → 0x06.
+        <pre class="code"><span class="kw">def</span> <span class="fn">int_by_value</span>(v):
+  <span class="kw">if</span> v == <span class="nm">0</span>:  <span class="kw">return</span> byte(<span class="nm">0x02</span>/<span class="nm">0x03</span>)  <span class="cm"># 폭0</span>
+  <span class="kw">if</span> -128&lt;=v&lt;=127: <span class="kw">return</span> b<span class="st">'\x04'</span>+i8(v)
+  <span class="kw">if</span> -32768&lt;=v&lt;=32767: <span class="kw">return</span> b<span class="st">'\x05'</span>+i16(v)
+  <span class="kw">return</span> b<span class="st">'\x06'</span>+i32(v)</pre>
+      </div>
+    </div>
+    <div class="part p-byte">
+      <div class="part-h"><span class="fn">gen_dict() · wrap()</span><span class="role">정답 트리 + 파일화</span></div>
+      <div class="part-b">
+        <code>gen_dict</code> 이 시드 고정 난수로 중첩 트리(struct/array/스칼라, 마커 런·승격 수열 등 실측 패턴 포함)를 만든다 = <b>정답</b>.
+        <code>wrap</code> 이 매직·최상위 struct·<b>체크섬</b>을 붙여 진짜 <code>.dd</code> 로 만든다.
+        <pre class="code"><span class="kw">def</span> <span class="fn">wrap</span>(members):
+  raw = MAGIC + b<span class="st">'\x0b'</span> + members + b<span class="st">'\x00'</span>
+  <span class="kw">return</span> raw + <span class="fn">checksum</span>(raw)  <span class="cm"># h=h*17+b</span></pre>
+      </div>
+    </div>
+    <div class="part p-dec">
+      <div class="part-h"><span class="fn">import 3 파서</span><span class="role">해석 방향</span></div>
+      <div class="part-b">
+        <code>dd_main</code>(휴리스틱), <code>dd_unified</code>(공리, safe/pure 두 모드), <code>dd_strict</code>(오라클).
+        러너는 이들을 <b>수정하지 않고 그대로 불러</b> 대조한다 — 검증 대상과 검증 도구를 분리.
+        세 파서가 서로 독립적으로 작성됐다는 점이 차분 검증의 신뢰 근거다.
+      </div>
+    </div>
+    <div class="part p-oracle">
+      <div class="part-h"><span class="fn">enum_parses()</span><span class="role">미니 전수 열거기</span></div>
+      <div class="part-b">
+        한 파일에서 <b>경계(n−4)에서 정확히 끝나는 서로 다른 파스 트리를 모두</b> 센다.
+        해가 <b>2개 이상 = 모호</b>(규칙이 그 바이트를 못 가름), <b>1개 = 결정적</b>, <b>0개 = 인코딩 불가</b>.
+        룰셋을 바꿔가며(§4) "어떤 규칙이 모호성을 만드나"를 국소화한다. <code>dd_strict</code> 의 엄격 pass 문법을 미러.
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ④ -->
+<section id="rulesets">
+  <div class="sec-head"><span class="sec-num">04</span><h2>3개 룰셋 — 모호성의 원인을 분리하는 손잡이</h2></div>
+  <p class="sub">같은 바이트를 세 가지 규칙으로 각각 해석해 해 개수를 비교합니다. 어느 룰셋에서 모호성이 사라지는지가
+  <b>"어떤 규칙이 범인인가"</b>를 가리킵니다.</p>
+
+  <div class="rulesets">
+    <div class="rs spec">
+      <h4 style="color:var(--bad)">spec</h4>
+      <p class="tagline">현 스펙 §1.3 그대로. 이름 스칼라에 [payload]·[생략] 두 분기 허용.</p>
+      <div class="branch"><span class="n n2">2</span> 폭0 태그도 "폭1+생략"으로 취급</div>
+      <div class="branch"><span class="n n2">2</span> wide 태그도 생략 분기 허용</div>
+      <div class="branch"><span class="n n1">＝</span> dd_strict 엄격 pass 미러</div>
+    </div>
+    <div class="rs nowide">
+      <h4 style="color:var(--warn)">nowide</h4>
+      <p class="tagline">wide(2B+) 생략 분기만 제거. 폭1 생략은 유지.</p>
+      <div class="branch"><span class="n n1">1</span> wide 생략 제거 → 반례 A 해소</div>
+      <div class="branch"><span class="n n2">2</span> 폭1 헷지는 남음 → 반례 B 유지</div>
+      <div class="branch"><span class="n n1">·</span> "어느 헷지가 범인?" 분리용</div>
+    </div>
+    <div class="rs pure">
+      <h4 style="color:var(--good)">pure</h4>
+      <p class="tagline">공리 A1 그대로. 0x02/0x03 = 폭0 전용, 그 외 = payload 전용. 생략 분기 없음.</p>
+      <div class="branch"><span class="n n1">1</span> 모든 위치에서 대안 최대 1개</div>
+      <div class="branch"><span class="n n1">1</span> → 해 ≤ 1 (구성적 무모호)</div>
+      <div class="branch"><span class="n n1">0</span> 인코딩 불가 바이트는 0해로 거부</div>
+    </div>
+  </div>
+  <div class="callout"><b>왜 3개나?</b> 모호성이 <code>spec</code> 에선 2해인데 <code>pure</code> 에선 1해로 줄면,
+  그 사이에서 <b>제거된 규칙(생략 헷지)이 모호성의 원인</b>임이 확정된다. <code>nowide</code> 는 두 헷지 중
+  어느 쪽인지까지 쪼갠다. 룰셋 = 원인을 격리하는 실험 조작 변인.</div>
+</section>
+
+<!-- ⑤ -->
+<section id="commands">
+  <div class="sec-head"><span class="sec-num">05</span><h2>6개 도구 — 각 서브커맨드가 무엇을·왜 증명하나</h2></div>
+  <p class="sub">부품 4개 + 룰셋 3개를 조합한 실험들입니다. 오른쪽 배지는 그 도구가 겨냥하는 주장(§6).</p>
+
+  <div class="cmd">
+    <div class="cmd-h"><span class="cli"><span class="kw">selftest</span></span><span class="pill p1">기반</span></div>
+    <div class="cmd-b">
+      <dt>한다</dt><dd>스펙 §1.4 실측 예제 + 손으로 만든 케이스(마커 런·승격·이형·짝수 함정·END직전·A1갈림·유령분기) 15종을 세 파서에 통과시킨다.</dd>
+      <dt>왜</dt><dd>생성 코퍼스가 <b>실측 패턴을 실제로 커버</b>하는지 먼저 못박는다. 랜덤 이전의 <b>바닥 진리</b> — 여기가 깨지면 나머지가 무의미.</dd>
+      <dt>논리</dt><dd>알려진 입력 → 알려진 출력. 유일하게 "외부 정답"(스펙 예제)을 쓰는 지점.</dd>
+    </div>
+  </div>
+
+  <div class="cmd">
+    <div class="cmd-h"><span class="cli"><span class="kw">diff</span> --files N --seed S [--pure]</span><span class="pill p1">P1 동치</span></div>
+    <div class="cmd-b">
+      <dt>한다</dt><dd>랜덤 트리 N개를 인코딩해, <code>dd_main == 원래 트리 == unified(safe)</code> 를 확인. <code>--pure</code> 면 pure 모드도.</dd>
+      <dt>왜</dt><dd><b>왕복 + 차분</b>의 본체. 예외 4개(dd_main)와 공리 2개(unified)가 수천 파일에서 한 글자도 안 갈리면 <b>"예외 ≡ 공리"</b> 가 실행으로 선다.</dd>
+      <dt>논리</dt><dd>인코더 이미지 위의 전수에 가까운 표본. 불일치 1건이라도 나오면 즉시 반례로 출력(트리·hex 동봉).</dd>
+    </div>
+  </div>
+
+  <div class="cmd">
+    <div class="cmd-h"><span class="cli"><span class="kw">strict</span> --files N --seed S [--pure]</span><span class="pill p3">오라클</span></div>
+    <div class="cmd-b">
+      <dt>한다</dt><dd>생성 파일마다 <code>dd_strict.parse_strict</code> 를 돌려 <b>unique/ambiguous/failed</b> 를 집계하고, 유일해가 <code>dd_main</code> 트리와 같은지 본다.</dd>
+      <dt>왜</dt><dd>차분은 "세 파서가 같다"만 본다. 오라클은 한발 더 — <b>해가 정말 하나뿐인가(모호하지 않은가)</b>를 전수 탐색으로 보증한다.</dd>
+      <dt>논리</dt><dd>pure 이미지 → 전부 unique 기대. safe 이미지(wide 생략 포함) → 일부 ambiguous = <b>헷지가 실제로 모호를 만든다는 실증</b>.</dd>
+    </div>
+  </div>
+
+  <div class="cmd">
+    <div class="cmd-h"><span class="cli"><span class="kw">ambig</span></span><span class="pill p3">P3 반례</span></div>
+    <div class="cmd-b">
+      <dt>한다</dt><dd>손으로 구성한 <b>모호 반례 2종</b>(A: float payload ≡ 제로필드 인코딩, B: 폭1 END 시프트)을 룰셋 3개 × dd_strict 로 판정한 표를 낸다.</dd>
+      <dt>왜</dt><dd>모호성이 <b>어디서 오는지</b>를 구성적으로 특정. spec=2해 / pure=1·0해 대비가 "생략 헷지가 범인"을 못박는다.</dd>
+      <dt>논리</dt><dd>두 해석이 <b>같은 바이트</b> → 인코딩 비단사 → 방향 무관하게 원리적으로 못 가름. 규칙 추가가 아니라 <b>오라클 검출</b>이 정답임을 보인다.</dd>
+    </div>
+  </div>
+
+  <div class="cmd">
+    <div class="cmd-h"><span class="cli"><span class="kw">hunt</span> --rounds N --seed S</span><span class="pill p2">P2 무모호</span></div>
+    <div class="cmd-b">
+      <dt>한다</dt><dd>유효 파일에 1~3바이트 <b>무작위 변형</b>을 가하고(체크섬 재계산), 룰셋별로 모호(≥2해) 건수를 센다.</dd>
+      <dt>왜</dt><dd>손으로 만든 반례 너머, <b>지형 전체</b>에서 pure 룰이 모호를 만드는지 사냥한다. pure 모호가 1건이라도 나오면 P2 붕괴.</dd>
+      <dt>논리</dt><dd>적대적 입력에도 <code>pure</code> 가 0건이면 "분기가 없어 해 ≤ 1" 이 경험적으로도 선다. spec/nowide 는 변형에서 모호가 튀어나온다(대조군).</dd>
+    </div>
+  </div>
+
+  <div class="cmd">
+    <div class="cmd-h"><span class="cli"><span class="kw">measure</span> PATH...</span><span class="pill p4">P4 실측</span></div>
+    <div class="cmd-b">
+      <dt>한다</dt><dd><b>실코퍼스</b>(.tdf)를 순회하며 카운터 5개를 잰다: wide 생략 실재? 폭1 앵커/END 생략? explicit 0-payload? 폭0 뒤 비정상?</dd>
+      <dt>왜</dt><dd>여태는 <b>생성</b> 데이터. 이것만이 <b>진짜 데이터</b>가 pure 이미지 안에 있는지 판별한다 — 유일하게 코퍼스가 필요한 커맨드.</dd>
+      <dt>논리</dt><dd>카운터 [1]~[5] 가 <b>전부 0</b>이면 실코퍼스는 pure 문법으로 충분(룩어헤드·정규식 전폐 가능). 하나라도 &gt;0이면 safe 모드 유지 근거.</dd>
+    </div>
+  </div>
+</section>
+
+<!-- ⑥ -->
+<section id="claims">
+  <div class="sec-head"><span class="sec-num">06</span><h2>주장 ↔ 도구 매핑 — 무엇이 무엇을 떠받치나</h2></div>
+  <p class="sub">러너가 겨냥하는 명제 4개(P1~P4)와, 각각을 지지하는 도구·논리.</p>
+
+  <div class="tblwrap">
+    <table>
+      <thead><tr><th>주장</th><th>내용</th><th>지지 도구</th><th>성립 조건</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><span class="claim">P1</span></td>
+          <td>예외 4개(dd_main) ≡ 공리 2개(unified) — <b>인코더 이미지 위</b>에서 트리 100% 일치</td>
+          <td><code class="k">diff</code> <code class="k">selftest</code></td>
+          <td>생성 코퍼스 전수 불일치 0</td>
+        </tr>
+        <tr>
+          <td><span class="claim">P2</span></td>
+          <td>pure 룰은 프로덕션당 대안 ≤1 → 해 항상 ≤1 (구성적 무모호)</td>
+          <td><code class="k">hunt</code> <code class="k">strict --pure</code></td>
+          <td>변형 퍼즈에서 pure 모호 0건</td>
+        </tr>
+        <tr>
+          <td><span class="claim">P3</span></td>
+          <td>모호의 원천은 이름 필드의 두 헷지(wide 생략·폭1 explicit)뿐. 방향 무관.</td>
+          <td><code class="k">ambig</code></td>
+          <td>spec=2해 → pure=1·0해로 소거</td>
+        </tr>
+        <tr>
+          <td><span class="claim">P4</span></td>
+          <td>실코퍼스가 pure 이미지 안인지는 카운터 5개가 판별</td>
+          <td><code class="k">measure</code></td>
+          <td>코퍼스 필요 — 카운터 전부 0?</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="callout"><b>겹겹의 방어:</b> <code>selftest</code>(바닥 진리) → <code>diff</code>(왕복·차분) →
+  <code>strict</code>(해 유일성) → <code>ambig</code>(모호 국소화) → <code>hunt</code>(적대 지형) →
+  <code>measure</code>(실측). 앞 다섯은 <b>생성 데이터로 지금 실행 가능</b>, 마지막 하나만 코퍼스를 기다린다.</div>
+</section>
+
+<!-- ⑦ -->
+<section id="epi">
+  <div class="sec-head"><span class="sec-num">07</span><h2>이 방법이 증명하는 것 / 못 하는 것</h2></div>
+  <p class="sub">테스트는 <b>일치의 존재</b>를 보이지 <b>모든 버그의 부재</b>를 보이지 않습니다. 경계를 정직하게 긋습니다.</p>
+
+  <div class="epi">
+    <div class="epi-col can">
+      <h4>✓ 증명하는 것</h4>
+      <ul>
+        <li><b>규칙의 자기 무모순</b>: 인코딩→디코딩 왕복이 항등. 규칙이 앞뒤로 맞물린다.</li>
+        <li><b>예외 ≡ 공리 (인코더 이미지 위)</b>: dd_main 과 unified 가 수천 파일서 일치.</li>
+        <li><b>pure 문법의 무모호성</b>: 구성적(분기 0) + 경험적(퍼즈 0건).</li>
+        <li><b>모호의 원천 국소화</b>: 정확히 두 헷지. 반례로 구성 증명.</li>
+        <li><b>재현성</b>: 시드 고정 → 어떤 반례든 동일 재현.</li>
+      </ul>
+    </div>
+    <div class="epi-col cant">
+      <h4>✗ 증명하지 못하는 것</h4>
+      <ul>
+        <li><b>실인코더 = 우리 인코더</b>: Enc 는 <b>가정된</b> 생성 모델. 실장비가 다르면 이미지가 어긋난다 → <code>measure</code> 로만 판별.</li>
+        <li><b>이미지 밖 인코딩</b>: <code>02 05</code> 같은 규칙-허용·인코더-미생성 바이트에선 dd_main↔unified 가 갈린다(의도). <code>anomalies</code> 로 검출.</li>
+        <li><b>enum 이 dd_strict 를 완벽 미러함</b>: loose fallback 은 미모델. 엄격 pass만.</li>
+        <li><b>enum 값의 의미</b>: 폭·부호는 못 확정(int16 vs uint16 미관측).</li>
+      </ul>
+    </div>
+  </div>
+  <div class="callout"><b>경계는 약점이 아니라 설계다.</b> 못 가르는 병리 입력은 로컬 규칙으로 억지로 가르지 않고
+  전역 오라클(<code>dd_strict</code> 경계 정합)과 <code>anomalies</code> 가 <b>검출</b>한다. "해석은 결정적 문법이,
+  판정은 오라클이" — 이 분업이 <code>dd_prove.py</code> 가 실행으로 떠받치는 결론이다.
+  이 경계들은 실제로 <b>독립 에이전트 4개의 반박 시도</b>로 찾아내 명문화했다.</div>
+</section>
+
+</main>
+
+<footer class="wrap">
+  <p>실행 전 논리 지도 · 대상: <code>dd_prove.py</code> (<code>selftest·diff·strict·ambig·hunt·measure</code>)<br>
+  부품: <code>Enc</code>(인코더) · <code>gen_dict/wrap</code>(정답+파일화) · 3파서 import · <code>enum_parses</code>(전수 열거)</p>
+</footer>
+
+<script>
+(function(){
+  var root=document.documentElement, tb=document.getElementById('themeToggle');
+  tb.addEventListener('click',function(){
+    var cur=root.getAttribute('data-theme');
+    if(!cur){ cur=matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'; }
+    root.setAttribute('data-theme', cur==='dark'?'light':'dark');
+  });
+})();
+</script>
