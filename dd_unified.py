@@ -75,6 +75,9 @@ NUM = {
 }
 
 FIELD_ANCHOR = re.compile(rb'\x09[A-Za-z_][A-Za-z0-9_.\-]{0,63}\x00')
+# 유효 식별자(이름) 판별 — dd_strict.NAME_RE 와 동일. 배열 named_container
+# 원소의 이름 유효성 검사에 쓴다(A2 결정화).
+NAME_RE = re.compile(rb'^[A-Za-z_][A-Za-z0-9_.\-]{0,63}$')
 
 
 class Unified:
@@ -118,11 +121,19 @@ class Unified:
         return struct.unpack(fmt, self.raw[i:i + width])[0], i + width
 
     def _zero_elided(self, i, width):
-        if FIELD_ANCHOR.match(self.raw, i):  # 형제 필드가 이미 시작되어 있음
+        # 다음에 형제 필드 앵커(09+식별자+00)가 바로 보이면 → 이 값은 생략된 0.
+        # 이건 wide(0.0 float 등) 포함 안전한 판정이다.
+        if FIELD_ANCHOR.match(self.raw, i):
             return True
-        # END 직전 생략 판정은 폭 1 에서만 — 0x00 payload 로 읽어도 값이
-        # 동일하게 0 이라 안전하고, 폭 2+ 는 선두 0x00 이 정상 payload 일 수 있다.
-        return width == 1 and i < self.end and self.raw[i] == END
+        # ⚠ 2026-07 정정: 예전엔 '폭1 태그 + 바로 END → 0' 도 여기서 생략으로
+        # 봤는데, 이 경로에 오는 폭1 태그는 0x04(int8 값 캐리어)뿐이고 그건
+        # 측정상 항상 비영이다(0 은 폭0 태그 0x02/0x03). 즉 0x04 가 END-직전
+        # 0값으로 생략될 일이 실코퍼스엔 없다. 반대로 그 검사를 두면 '명시적
+        # 04 00'(int8 값 0) 뒤에 형제 필드가 오는 입력에서 0x00 을 END 로
+        # 오인해 컨테이너를 조기 폐쇄하고 뒤 필드를 잃는다(dd_main 과 공유하던
+        # 잠복 버그). END-직전 검사를 제거하면 04 00 이 값 0 + payload 소비로
+        # 올바로 읽히고, 실코퍼스 동작은 불변(위 이유로 발화 케이스 없음).
+        return False
 
     def _cstr(self, i):
         j = self.raw.find(0, i)
@@ -162,6 +173,7 @@ class Unified:
 
     def _array(self, i):
         arr = []
+        dom = None                           # 범주 동질성(§1.5-3): num/str/container
         while i < self.end:
             t = self.raw[i]
             if t == END:
@@ -169,23 +181,42 @@ class Unified:
             if t == STRING:                  # 공리 A2: named_container | bare_value
                 s, j = self._cstr(i + 1)
                 nxt = self.raw[j] if j < self.end else None
-                if nxt in (ARRAY, STRUCT):
+                # named_container 판별에 이름 유효성(NAME_RE)까지 요구한다 —
+                # dd_strict / dd_prove.enum_parses 와 동일한 결정화. (이게 없으면
+                # 같은 바이트 09 '1' 00 0B 00 을 이쪽은 {'1':{}} 로, 저쪽은
+                # ['1',{}] 로 달리 읽어 'pure' 명세가 갈렸다 — 적대 검증 발견.)
+                # 이름 바이트는 NUL 제외 (j 는 _cstr 이 돌려준 NUL 다음 인덱스).
+                if nxt in (ARRAY, STRUCT) and NAME_RE.match(self.raw[i + 1:j - 1]):
                     v, i = self._value(nxt, j + 1, pinned=False)
                     arr.append({s: v})
+                    dom = self._cat_check(dom, 'container', i)
                 else:
                     arr.append(s)
                     i = j
+                    dom = self._cat_check(dom, 'str', i)
                 continue
             if t in NUM:
                 v, i = self._number(t, i + 1, pinned=False)
                 arr.append(v)
+                dom = self._cat_check(dom, 'num', i)
                 continue
             if t in (STRUCT, ARRAY):
                 v, i = self._value(t, i + 1, pinned=False)
                 arr.append(v)
+                dom = self._cat_check(dom, 'container', i)
                 continue
             arr.append(f'<?0x{t:02x}>')      # 미지 태그
             i += 1
+
+    def _cat_check(self, dom, cat, i):
+        """배열 범주 동질성 검사(§1.5-3): 수치/문자열/컨테이너 교차는 디싱크
+        신호. 관대 디코더라 거부하진 않고 anomalies 로 플래그만 한다 —
+        엄격 검증기(dd_strict/enum_parses)는 같은 상황을 '무효 파스'로 본다."""
+        if dom is None:
+            return cat
+        if cat != dom:
+            self.anomalies.append(('array category cross', dom + '->' + cat, i))
+        return dom
         return arr, i
 
 

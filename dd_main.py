@@ -142,15 +142,20 @@ class TLVParser:
                 return 0
             # 같은 생략이 필드가 컨테이너의 '마지막' 멤버일 때도 일어난다 —
             # 이때는 다음에 형제 필드 앵커가 아니라 그 컨테이너를 닫는
-            # END(0x00) 가 곧바로 온다. size==1 태그(int8_a/b/c, uint8)에
-            # 한해서만 안전하게 이 검사를 적용한다: 1바이트 값의 유효 범위가
-            # 정확히 이 한 바이트뿐이라 "생략"과 "명시적 값 0x00 뒤 END"를
-            # 구분할 방법이 없고, 위 KEY_ANCHOR 케이스와 마찬가지로 항상
-            # 0으로 해석해도 값을 잘못 삼킬 여지가 없다. enum/bool/float 처럼
-            # 폭이 2바이트 이상인 타입은 첫 바이트가 0x00 이어도 나머지
-            # 바이트에 실제 값이 있을 수 있어(예: float 비정규값) 이 검사를
-            # 적용하면 진짜 값을 잘라먹을 위험이 있으므로 제외한다.
-            if size == 1 and self.i < self.end and raw[self.i] == TAG_END:
+            # END(0x00) 가 곧바로 온다. **0 표기 전용 태그(0x01/0x02/0x03)에
+            # 한해서만** 이 검사를 적용한다.
+            #   ⚠ 2026-07 정정: 예전엔 size==1 전부(0x04 포함)에 적용했는데,
+            #   그건 잠복 버그였다. 0x04(int8_c)는 실제 int8 '값 캐리어'이고
+            #   측정상 이름 필드 1087/1087 이 전부 비영이다(0 은 0x02/0x03 로
+            #   기록됨). 따라서 0x04 가 0값으로 생략될 일은 없다. 그런데도
+            #   0x04 를 이 검사에 포함하면 '명시적 04 00'(int8 값 0) 뒤에
+            #   형제 필드가 오는 입력에서 0x00 을 END 로 오인해 컨테이너를
+            #   조기 폐쇄하고 뒤 필드를 통째로 잃는다(경계 미도달·무증상).
+            #   0x04 를 빼면 이 입력이 {a:0, b:7} 로 올바로 읽히고 경계까지
+            #   소비된다. 실코퍼스 동작은 불변(0x04 END-직전 0값이 애초에 없음).
+            #   enum/bool/float(폭 2B+)은 선두 0x00 이 실값일 수 있어 원래 제외.
+            if (subtype in (TAG_INT8_A, TAG_INT8_B, TAG_UINT8)
+                    and self.i < self.end and raw[self.i] == TAG_END):
                 return 0
             if self.i + size <= self.n:
                 v = struct.unpack(f, raw[self.i:self.i + size])[0]
@@ -436,7 +441,14 @@ def _count_leaves(tree):
 def parse_bytes(raw, name=''):
     """단일 .dd 바이트를 스펙 기반 재귀 TLV 로 파싱해 dict 반환"""
     from collections import Counter
-    tree, unknown, trailer = parse_tlv(raw)
+    # parse_tlv 대신 파서를 직접 들어 최종 커서 위치(경계 도달 여부)를 읽는다.
+    p = TLVParser(raw)
+    tree = p.parse()
+    unknown, trailer = p.unknown, p.trailer
+    # 경계(n-4) 미도달 = 파싱이 도중에 멈췄다는 신호. 단일 pass 휴리스틱은
+    # 예전엔 이를 조용히 흘려 뒤 필드를 잃어도 티가 안 났다(예: 명시적
+    # '04 00'). 남은 바이트 수를 리포트해 무증상 절단을 드러낸다.
+    trailing = max(0, p.end - p.i) if raw[:4] == MAGIC else 0
 
     unk_tags = Counter(t for t, _ in unknown)
     samples = []
@@ -455,6 +467,8 @@ def parse_bytes(raw, name=''):
         'field_count': _count_leaves(tree),
         'trailer': trailer.hex(' ') if trailer else '',
         'trailer_ok': dd_trailer_ok(raw) if raw[:4] == MAGIC else None,
+        'boundary_ok': trailing == 0,
+        'trailing_bytes': trailing,
         'unknown_tags': {f'0x{k:02x}': v for k, v in unk_tags.items()},
         'unknown_samples': samples,
     }
@@ -501,6 +515,9 @@ def print_result(res, preview=40):
     if res.get('trailer'):
         mark = {True: '✓ 체크섬 일치', False: '✗ 체크섬 불일치!', None: ''}[res.get('trailer_ok')]
         print(f"    // trailer(h=h*17+b): {res['trailer']}  {mark}")
+    if res.get('trailing_bytes'):
+        print(f"    ⚠ 경계 미도달: 파싱이 {res['trailing_bytes']}B 를 남기고 멈춤 "
+              f"(무증상 절단 가능 — dd_strict 로 확인 권장)")
     if res['unknown_tags']:
         print(f"    ⚠ 미지 태그: {res['unknown_tags']}")
         for s in res.get('unknown_samples', [])[:3]:
@@ -634,6 +651,84 @@ def print_discovery_report(report):
             print(f"    ctx: {hx}")
 
 
+def detect_format(raw):
+    """`.dd` 형식 자동 감지 (스펙 §3). 반환: 'binary' | 'text'.
+
+    1. 앞 4바이트가 매직(17 FA AE 4E) → binary
+    2. NUL 바이트가 있고 출력가능문자 비율 < 85% → binary (매직 없는 변형 대비)
+    3. 그 외 → text
+    """
+    if raw[:4] == MAGIC:
+        return 'binary'
+    if not raw:
+        return 'text'
+    if 0 in raw:
+        printable = sum(1 for b in raw if 0x20 <= b <= 0x7e or b in (9, 10, 13))
+        if printable / len(raw) < 0.85:
+            return 'binary'
+    return 'text'
+
+
+def _run(args):
+    """main() 의 실제 처리부 — 모드별 분기 (--raw / TDF 경로 / 스켈레톤 등)."""
+    import json
+
+    # ── 원시 .dd 하나를 직접 파싱 ──
+    if args.raw:
+        raw = Path(args.raw).read_bytes()
+        fmt = detect_format(raw)
+        print(f"[형식 감지: {fmt}]  {args.raw}")
+        if fmt == 'text':
+            print("  (텍스트 형식 — 바이너리 TLV 파서 대상 아님. 메모장 구조 그대로)")
+            return
+        if args.skeleton:
+            print(extract_skeleton(raw))
+            return
+        if args.closers:
+            print_closers(raw, name=args.raw)
+            return
+        res = parse_bytes(raw, name=args.raw)
+        print_result(res)
+        if args.output:
+            Path(args.output).write_text(
+                json.dumps(res, ensure_ascii=False, indent=2, default=str),
+                encoding='utf-8')
+            print(f"[JSON 저장: {args.output}]")
+        return
+
+    # ── 폴더/파일의 모든 TDF 처리 ──
+    tdfs = find_tdf_files(args.path)
+    if not tdfs:
+        print(f"TDF(.tdf) 를 찾지 못함: {args.path}")
+        return
+
+    all_results = []
+    for tdf in tdfs:
+        results = process_tdf(tdf, dd_filter=args.dd, verbose=not args.quiet
+                              and not args.discover)
+        all_results.extend(results)
+        if args.per_tdf_json:
+            out = Path(tdf).with_suffix('.json')
+            out.write_text(json.dumps(results, ensure_ascii=False, indent=2,
+                                      default=str), encoding='utf-8')
+            print(f"[JSON 저장: {out}]")
+
+    if args.discover:
+        report = build_discovery_report(all_results)
+        print_discovery_report(report)
+        if args.discover_json:
+            Path(args.discover_json).write_text(
+                json.dumps(report, ensure_ascii=False, indent=2, default=str),
+                encoding='utf-8')
+            print(f"[발굴 리포트 저장: {args.discover_json}]")
+
+    if args.output:
+        Path(args.output).write_text(
+            json.dumps(all_results, ensure_ascii=False, indent=2, default=str),
+            encoding='utf-8')
+        print(f"\n[통합 JSON 저장: {args.output}  ({len(all_results)}개 .dd)]")
+
+
 def main():
     import argparse
     ap = argparse.ArgumentParser(
@@ -672,3 +767,7 @@ def main():
             print(f"\n출력 저장 완료: {Path(args.save).resolve()}")
             sys.stdout = sys.stdout.stream
             _logfile.close()
+
+
+if __name__ == '__main__':
+    main()

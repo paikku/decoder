@@ -83,7 +83,13 @@ def _walk(raw, st):
         # 이름 있는 스칼라: 0값 생략(다음이 필드앵커/END)이면 payload 없음.
         if sub in SCALARS:
             fmt, size = SCALARS[sub]
-            elided = _looks_anchor(raw, i, end) or (i < end and raw[i] == TAG_END)
+            # ⚠ 2026-07 정정: END-직전 생략은 **폭 1 태그에 한해서만** 적용한다
+            # (스펙 §1.3). 예전엔 전 폭에 적용해, 명시적 0.0 float64(payload
+            # 첫 바이트 0x00)나 값 0~255 의 named 수치(선두 0x00)를 '생략'으로
+            # 오분류하고 walk 를 조기 종료시켰다(무증상 절단). 앵커 생략은
+            # payload 첫 바이트가 0x09+식별자+NUL 형태여야만 매치되므로 폭 무관.
+            elided = (_looks_anchor(raw, i, end)
+                      or (size == 1 and i < end and raw[i] == TAG_END))
             if elided:
                 _rec_named(st, sub, 0, True)
                 return i
@@ -136,7 +142,14 @@ def _walk(raw, st):
                 raise ValueError(f'array elem 0x{t:02x}@{i}')
         return i
 
-    return read_struct(pos[0])
+    endpos = read_struct(pos[0])
+    # 경계(n-4) 정확 도달 검증 — 도중에 멈췄으면 후속 필드가 통계에서 조용히
+    # 누락된 것이므로 오류로 올린다(무증상 절단 방지). main() 이 parse_errors
+    # 로 집계·표시한다.
+    if endpos != end:
+        raise ValueError(f'walk가 경계 미도달: endpos={endpos} != end={end} '
+                         f'(남은 {end - endpos}B)')
+    return endpos
 
 
 def _looks_anchor(raw, i, end):
