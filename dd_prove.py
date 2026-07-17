@@ -16,14 +16,23 @@
   nowide 룰 = wide(2B+) 생략 분기만 제거
   pure 룰   = 공리 A1 그대로 (0x02/0x03 폭0 전용, 그 외 payload 전용 — 분기 없음)
 
-핵심 주장 (이 러너가 실행으로 보이는 것):
-  P1. dd_unified(safe) 는 생성모델 이미지(=규칙이 허용하는 인코딩 전체)에서
-      dd_main 과 트리가 100% 일치한다. (예외 4개 ≡ 공리 2개 + 룩어헤드 1개)
-  P2. pure 룰은 분기가 없어 해가 항상 ≤1 (구성적으로 무모호).
-  P3. spec 룰의 모호성은 정확히 두 헷지에서 나온다:
-      wide 생략(반례 A), 폭1 explicit payload(반례 B). 반례는 방향(역방향
-      파싱)과 무관하다 — 같은 바이트에 두 인코딩이 겹치므로.
-  P4. 실코퍼스가 pure 이미지 안인지는 measure 의 카운터 4개가 판별한다.
+핵심 주장 (이 러너가 실행으로 보이는 것 — 적대 검증 V1~V4 반영해 정밀화):
+  P1. dd_unified(safe) 는 인코더 이미지(A1 을 지키는 인코딩; Enc 가 형식화)
+      위에서 dd_main 과 트리가 == 기준 100% 일치한다.
+      주의: '규칙이 허용하는 인코딩 전체'와는 다르다 — 스펙 표('0~1B')가
+      헷지로 남긴 `02 05`(0x02+비영 payload) 같은 이미지-밖 인코딩에서는
+      dd_main({'a':5})과 의도적으로 갈리며(unified 는 {'a':0}), 이 갈림은
+      unified.anomalies 로 검출된다. 이때 dd_strict 는 조용히 unique 를
+      반환한다(§4 트립와이어 주장의 구멍 — V1 발견).
+  P2. pure 룰은 프로덕션당 대안이 최대 1개라 해가 항상 ≤1 (구성적 무모호;
+      V2 의 3,198개 변형 퍼즈에서도 모호 0건).
+  P3. dd_strict 1차(엄격) pass 문법 안에서 모호성의 원천은 정확히
+      '이름 필드'의 두 헷지다: wide 생략(반례 A), 폭1 explicit
+      payload(반례 B). 반례는 읽기 방향과 무관하다 — 같은 바이트에 두
+      인코딩이 겹치므로 (V4 가 역방향 전수 열거로 해집합 방향 불변 확인).
+      스코프 주의: 1차 pass 가 실패한 뒤 도는 loose fallback(이름 스칼라
+      원소 허용 등)은 별도의 모호 클래스를 추가로 갖는다 — V2 발견.
+  P4. 실코퍼스가 pure 이미지 안인지는 measure 의 카운터 [1]~[5] 가 판별한다.
 """
 
 import argparse
@@ -198,9 +207,20 @@ def gen_dict(rng, depth):
 def enum_parses(raw, ruleset='spec', cap=8):
     """boundary(n-4)에서 정확히 끝나는 서로 다른 파스 트리를 최대 cap개 수집.
 
-    ruleset='spec'  : 이름 스칼라에 [payload]+[생략] 두 분기 (dd_strict 동작 미러)
+    dd_strict 의 **1차(엄격) pass** 문법을 미러한다 — loose fallback
+    (named_elems=True) 은 모델링하지 않는다 (스코프: P3 참고).
+
+    ruleset='spec'  : 이름 스칼라에 [payload]+[생략] 두 분기
+                      (dd_strict.gen_value 116-118행 — 무조건 생성)
     ruleset='nowide': wide(2B+) 태그의 생략 분기 제거 (폭1 payload 분기는 유지)
     ruleset='pure'  : 공리 A1 — 0x02/0x03 은 폭0 전용, 그 외는 payload 전용
+
+    배열 원소는 세 룰셋 공통으로 dd_strict.elem_alts 와 동일:
+    0x02/0x03 은 폭0 마커(분기 없음), 그 외 스칼라는 payload 전용,
+    dom(카테고리 동질성: NUM / STRING / NAMED / 컨테이너 태그) 게이트 적용.
+    ※ 초기 버전에 있던 '배열 1B 태그 생략 분기'는 dd_strict 에 실재하지
+      않는 유령 분기였다(gen_value 의 해당 코드는 named=True 로만 호출되는
+      죽은 코드 — 적대 검증 V2 발견). 제거함.
     """
     end = len(raw) - 4
     sols = []
@@ -220,7 +240,7 @@ def enum_parses(raw, ruleset='spec', cap=8):
             if i + w <= end:
                 yield struct.unpack(f, raw[i:i + w])[0], i + w
             if named and (ruleset == 'spec' or w == 1):
-                yield 0, i                     # 생략 분기
+                yield 0, i                     # 생략 분기 (이름 필드 한정)
             return
         if sub == STRING:
             j = raw.find(0, i, end)
@@ -233,35 +253,39 @@ def enum_parses(raw, ruleset='spec', cap=8):
         if sub == ARRAY:
             yield from cont(i, False)
 
-    def elem_alts(i, t):
+    def elem_alts(i, t, dom):
+        """(값, 다음위치, 새 dom). dd_strict.elem_alts 의 엄격 pass 미러."""
         if t == STRING:
             j = raw.find(0, i + 1, end)
             if j == -1:
                 return
             nxt = raw[j + 1] if j + 1 < end else None
-            if nxt in (ARRAY, STRUCT) and NAME_RE.match(raw[i + 1:j]):
-                name = raw[i + 1:j].decode()
-                for v, p in cont(j + 2, nxt == STRUCT):
-                    yield {name: v}, p
-            else:
-                yield raw[i + 1:j].decode('utf-8', 'replace'), j + 1
+            named_form = (nxt in (ARRAY, STRUCT)
+                          and NAME_RE.match(raw[i + 1:j]) is not None)
+            if named_form:
+                if dom in (None, 'NAMED'):
+                    name = raw[i + 1:j].decode()
+                    for v, p in cont(j + 2, nxt == STRUCT):
+                        yield {name: v}, p, 'NAMED'
+            elif dom in (None, STRING):
+                yield raw[i + 1:j].decode('utf-8', 'replace'), j + 1, STRING
             return
         info = NUM.get(t)
         if info is not None:
             fmt, width = info
-            if width == 0:                     # 마커 — 전 룰셋 공통 (dd_strict 동작)
-                yield 0, i + 1
+            if width == 0:                     # 폭0 마커 — dom 불변, 분기 없음
+                yield 0, i + 1, dom
                 return
-            if (ruleset != 'pure' and width == 1
-                    and i + 1 < end and raw[i + 1] <= STRUCT):
-                yield 0, i + 1                 # 배열 1B 태그 생략 분기 (dd_strict 미러)
-            if i + 1 + width <= end:
-                yield struct.unpack(fmt, raw[i + 1:i + 1 + width])[0], i + 1 + width
+            if dom in (None, 'NUM') and i + 1 + width <= end:
+                yield (struct.unpack(fmt, raw[i + 1:i + 1 + width])[0],
+                       i + 1 + width, 'NUM')
             return
         if t in (STRUCT, ARRAY):
-            yield from ((v, p) for v, p in cont(i + 1, t == STRUCT))
+            if dom in (None, t):
+                for v, p in cont(i + 1, t == STRUCT):
+                    yield v, p, t
 
-    def cont(i, is_struct, acc=()):
+    def cont(i, is_struct, acc=(), dom=None):
         if i >= end:
             return
         t = raw[i]
@@ -278,8 +302,8 @@ def enum_parses(raw, ruleset='spec', cap=8):
             for v, p in val_alts(j + 2, raw[j + 1], named=True):
                 yield from cont(p, True, acc + ((name, v),))
         else:
-            for v, p in elem_alts(i, t):
-                yield from cont(p, False, acc + (v,))
+            for v, p, nd in elem_alts(i, t, dom):
+                yield from cont(p, False, acc + (v,), nd)
 
     start = 5 if raw[4] == STRUCT else 4
     for tree, pos in cont(start, True):
@@ -409,6 +433,25 @@ def cmd_selftest(_args):
           dd_main.parse_tlv(raw)[0] == dd_unified.parse(raw, 'safe')
           == {'zero_f': 0, 'next': 7})
 
+    # 4) A1 확정 vs 헷지 — 이미지 밖 인코딩(02+비영 payload)에서의 '의도된 갈림'
+    #    dd_main(헷지)은 5 로 읽고, unified(A1 확정)는 0 + anomaly 기록.
+    #    dd_strict 는 이 파일을 조용히 unique 로 통과시킨다(V1 발견) —
+    #    그래서 anomalies 가 실질 트립와이어다.
+    raw = wrap(b'\x09a\x00\x02\x05')
+    u = dd_unified.Unified(raw, 'safe')
+    check('A1 확정: `02 05` → unified {a:0} + anomaly 1건, dd_main {a:5}',
+          u.parse() == {'a': 0} and len(u.anomalies) == 1
+          and dd_main.parse_tlv(raw)[0] == {'a': 5}
+          and dd_strict.parse_strict(raw).status == 'unique')
+
+    # 5) 유령 분기 제거 검증 — v=[2] ('0a 04 02 00') 는 전 룰셋 1해여야 한다
+    #    (초기 enum_parses 는 dd_strict 에 없는 배열 1B 생략 분기 때문에
+    #     spec/nowide 에서 2해로 과대집계했다 — V2 발견)
+    raw = wrap(b'\x09v\x00' + bytes([ARRAY]) + b'\x04\x02' + b'\x00')
+    counts = [len(enum_parses(raw, rs)) for rs in ('spec', 'nowide', 'pure')]
+    check('배열 v=[2]: 전 룰셋 1해 (유령 분기 없음) + dd_strict unique',
+          counts == [1, 1, 1] and dd_strict.parse_strict(raw).status == 'unique')
+
     print(f'\nselftest: {"전체 통과 ✓" if not fails else f"{len(fails)}건 실패 ✗"}')
     return 1 if fails else 0
 
@@ -490,10 +533,14 @@ def cmd_ambig(_args):
     print('읽는 법:')
     print('  · spec 룰에서 2해 = 같은 바이트에 두 인코딩이 겹침(인코딩 비단사).')
     print('    이 지점은 순방향/역방향/전역 어떤 알고리즘도 원리적으로 못 가른다 —')
-    print('    같은 바이트이므로 읽는 방향은 무관하다. 오라클(dd_strict)의 역할은')
-    print('    "가르기"가 아니라 "검출"이고, 그것이 이 포맷의 옳은 아키텍처다.')
+    print('    같은 바이트이므로 읽는 방향은 무관하다 (V4 가 역방향 전수 열거로')
+    print('    해집합 방향-불변을 실측 확인). 오라클(dd_strict)의 역할은 "가르기"가')
+    print('    아니라 "검출"이고, 그것이 이 포맷의 옳은 아키텍처다.')
     print('  · pure 룰(공리 A1)에서 A는 1해(진짜 float), B는 0해(인코딩 불가 바이트).')
-    print('    → 모호성의 원천은 정확히 두 헷지(wide 생략, 폭1 explicit 0-payload)다.')
+    print('    → dd_strict 엄격-pass 문법 안에서 모호성의 원천은 정확히 이름 필드의')
+    print('      두 헷지(wide 생략, 폭1 explicit 0-payload)다. 단, 엄격 pass 실패 시')
+    print('      도는 loose fallback 은 별도의 모호 클래스(이름 스칼라 원소 등)를')
+    print('      추가로 갖는다 — 혼합 배열 등 문법 밖 입력에서만 발동 (V2 발견).')
     return 0
 
 

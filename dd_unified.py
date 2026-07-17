@@ -29,19 +29,31 @@ dd_main.py 에는 실측으로 확정한 예외 처리가 4곳에 흩어져 있�
     (③은 이 문법의 LL(1) 룩어헤드일 뿐이다)
 
 mode:
-  'safe' : 스펙 §1.3 주의(모든 스칼라의 0값 생략 가능성)를 그대로 수용 —
-           이름 필드에서 폭>0 태그도 룩어헤드로 생략을 감지한다.
-           실코퍼스에서 dd_main 과 동일 동작.
-  'pure' : 생략이라는 개념 자체가 없는 결정적 문법 — 폭 테이블이 전부다.
-           룩어헤드/정규식 0회. 인코더가 진짜 최소-폭 원칙(0 은 항상
-           폭0 태그)을 지킨다면 이것으로 충분하며, 이 문법은 분기가
-           없어 증명적으로 무모호다. 실코퍼스가 pure 이미지 안에 있는지는
-           `dd_prove.py measure` 한 번으로 판별된다.
+  'safe' : 스펙 §1.3 주의(스칼라의 0값 생략 가능성)를 수용 — 이름 필드에서
+           폭>0 태그도 룩어헤드로 생략을 감지한다. A1 이미지(인코더가 실제로
+           만드는 인코딩) 위에서 dd_main 과 동일 동작.
+  'pure' : '생략' 판정 룩어헤드/정규식이 없는 결정적 문법 — 폭 테이블이
+           전부다. (A2 의 post-NUL 1바이트 판별은 문법 자체의 LL(1)
+           룩어헤드로 남는다 — 이것은 분기가 아니라 결정화다.)
+           프로덕션마다 대안이 최대 1개라 해가 항상 ≤1 (구성적 무모호).
+           실코퍼스가 pure 이미지 안인지는 `dd_prove.py measure` 로 판별.
+
+확정 vs 헷지 (적대 검증 V1 에서 정밀화):
+  이 파서는 두 모드 모두 A1 을 '확정'으로 취급한다 — 0x02/0x03 은 폭0 이며
+  payload 해석 분기가 없다 (근거: 이름 필드 측정 602/602 · 50/50 전부 0).
+  반면 dd_main/스펙 표('0~1B')는 payload 가능성을 헷지로 남겨 두었다.
+  따라서 규칙이 허용하지만 인코더가 만들지 않는 인코딩(예: `02 05` —
+  0x02 + 비영 payload)에서는 dd_main 과 의도적으로 갈린다: dd_main 은
+  {'a': 5}, 이 파서는 {'a': 0} + anomalies 기록. 주의 — 이런 파일에서
+  dd_strict 는 경고 없이 '유일해'를 반환하므로(§4 의 "즉시 검출" 주장과
+  달리 이름-필드 케이스에는 트립와이어가 없다), 실질적 트립와이어는
+  이 파서의 anomalies 와 dd_prove.py measure 카운터 [5] 다.
 
 전역 오라클(경계 n-4 정합 + 체크섬 + 유일해 검사)은 dd_strict.py 가
 담당한다. 공리가 덮지 못하는 병리적 입력(dd_prove.py ambig 의 반례처럼
 같은 바이트에 두 인코딩이 겹치는 파일)은 로컬 규칙이 아니라 오라클이
-검출하는 것이 옳다 — 그 지점은 어떤 디코더도 원리적으로 못 가른다.
+검출하는 것이 옳다 — 그 지점은 읽기 방향과 무관하게(역방향 파싱 포함)
+어떤 디코더도 원리적으로 못 가른다.
 """
 
 import re
@@ -72,6 +84,10 @@ class Unified:
         self.n = len(raw)
         self.end = self.n - 4 if self.n > 4 else self.n
         self.mode = mode
+        # A1 확정이 깨지는 증거 후보: (사유, 태그, 오프셋).
+        # 예: 이름 필드의 폭0 태그(02/03) 뒤가 필드 경계가 아님 —
+        # '0x02 가 payload 를 싣는 반례' 가 새 덤프에 나타나면 여기 잡힌다.
+        self.anomalies = []
 
     def parse(self):
         i = 4 if self.raw[:4] == MAGIC else 0
@@ -88,6 +104,12 @@ class Unified:
         0 은 애초에 폭0 태그로 오므로 '생략' 이란 없다."""
         fmt, width = NUM[tag]
         if width == 0:                       # 폭0 태그 = 0 (②의 정체)
+            if pinned and i < self.end and self.raw[i] != END \
+                    and not FIELD_ANCHOR.match(self.raw, i):
+                # A1 확정 위반 후보: 이름 필드의 02/03 뒤가 경계가 아니다.
+                # dd_main(헷지)은 이 바이트를 payload 로 읽는다 — 갈림 검출.
+                self.anomalies.append(('w0-tag followed by non-boundary',
+                                       tag, i))
             return 0, i
         if pinned and self.mode == 'safe' and self._zero_elided(i, width):
             return 0, i                      # '0 은 0바이트' 의 이름-필드 발현 (①)
