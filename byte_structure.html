@@ -170,6 +170,17 @@
   .cmp .res b{color:var(--ink)}
   .strike{text-decoration:line-through;text-decoration-color:var(--bad);text-decoration-thickness:2px}
 
+  /* ===== 해결 알고리즘 블록 ===== */
+  .algo{margin-top:14px;border:1px solid var(--line-soft);border-radius:10px;background:var(--bg-sunken);overflow:hidden}
+  .algo-h{display:flex;align-items:center;gap:8px;padding:9px 14px;font-size:11.5px;font-weight:800;
+    letter-spacing:.08em;text-transform:uppercase;color:var(--accent-ink);border-bottom:1px solid var(--line-soft)}
+  .algo-h .dot{width:8px;height:8px;border-radius:50%;background:var(--accent)}
+  .algo-h .src{margin-left:auto;font-family:var(--mono);font-size:10.5px;font-weight:600;color:var(--ink-faint);text-transform:none;letter-spacing:0}
+  .algo pre{margin:0;padding:12px 16px;font-family:var(--mono);font-size:12.5px;line-height:1.75;overflow-x:auto;color:var(--ink)}
+  .algo .cm{color:var(--ink-faint)} .algo .kw{color:var(--r-type)} .algo .st{color:var(--r-value)} .algo .nm{color:var(--r-subtype)}
+  .algo .why{padding:10px 16px;font-size:13px;color:var(--ink-soft);border-top:1px dashed var(--line)}
+  .algo .why b{color:var(--ink)}
+
   footer{padding:34px 0 54px;color:var(--ink-faint);font-size:13px;text-align:center}
 
   .theme-btn{position:fixed;top:16px;right:16px;z-index:20;width:40px;height:40px;border-radius:10px;
@@ -366,6 +377,25 @@
           <div class="res">값 = <b>0</b>, 바이트 소비 없이 다음 필드로. END(<code>00</code>)가 바로 올 땐 <b>1B 태그(0x01~0x04)에 한해</b> 같은 처리 — enum/bool/float 은 첫 바이트가 00 이어도 실값일 수 있어 제외.</div>
         </div>
       </div>
+
+      <div class="algo">
+        <div class="algo-h"><span class="dot"></span>해결 알고리즘 — 정규식 앵커 룩어헤드<span class="src">dd_main.py</span></div>
+        <pre><span class="cm"># "다음 필드 이름" 패턴을 정규식으로 정의 — 소비 없이 미리보기(lookahead)만 한다</span>
+KEY_ANCHOR = re.compile(rb'<span class="st">\x09([A-Za-z_][A-Za-z0-9_.\-]{0,63})\x00</span>')
+
+<span class="kw">def</span> read_scalar(subtype):
+    <span class="kw">if</span> KEY_ANCHOR.match(raw, i):      <span class="cm"># ① 커서 위치가 곧바로 "09+식별자+00" 이면</span>
+        <span class="kw">return</span> <span class="nm">0</span>                       <span class="cm">#    → payload 생략된 것. 소비 0바이트, 값 0</span>
+    <span class="kw">if</span> size == <span class="nm">1</span> <span class="kw">and</span> raw[i] == <span class="nm">0x00</span>:  <span class="cm"># ② 1바이트 태그 + 바로 END → 마지막 멤버의 0</span>
+        <span class="kw">return</span> <span class="nm">0</span>                       <span class="cm">#    (0x00을 값으로 읽어도 어차피 0이라 안전)</span>
+    v = unpack(fmt, raw[i:i+size]); i += size  <span class="cm"># ③ 아니면 정상 고정폭 소비</span>
+    <span class="kw">return</span> v</pre>
+        <div class="why"><b>왜 이 정규식이 결정적인가:</b> 앵커를 아무 <code>0x09</code> 가 아니라
+        <b>「0x09 + ASCII 식별자(첫 글자 영문/_, 최대 64자) + 0x00」</b> 전체 패턴으로 제한했기 때문입니다.
+        float64 payload 안에 우연히 <code>0x09</code> 바이트가 나와도 뒤가 식별자+NUL 형태가 아니면 매치되지 않아
+        "도미노 오정렬"이 안 생깁니다. ②를 1B 태그로 한정한 이유: enum(2B)/bool·float(4~8B)은 첫 바이트가
+        <code>00</code> 이어도 나머지 바이트에 실값이 있을 수 있어(float 비정규값 등) 잘라먹으면 안 됩니다.</div>
+      </div>
     </div>
   </div>
 
@@ -395,6 +425,26 @@
           </div>
           <div class="res">→ <b>[0, 0, 0, 2, 2, 3, …]</b> (position_nrs 실측, 단조증가로 검산됨)</div>
         </div>
+      </div>
+
+      <div class="algo">
+        <div class="algo-h"><span class="dot"></span>해결 알고리즘 — 코퍼스 통계로 의미 확정 + 마커 분기<span class="src">dd_analyze.py → dd_main.py</span></div>
+        <pre><span class="cm"># 1단계(발견): 배열 모호성이 전혀 없는 "이름 있는 스칼라 필드" 위치만 골라</span>
+<span class="cm">#              605개 파일 전체에서 태그별 값 분포를 측정한다 (dd_analyze.py)</span>
+<span class="cm">#   0x02 → 602/602 전부 0     0x03 → 50/50 전부 0     0x04 → 1087건 전부 비영(33종)</span>
+<span class="cm">#   ⇒ 0x02/0x03 은 "0 표기 전용 마커", 실제 int8 값 캐리어는 0x04 로 확정</span>
+
+<span class="cm"># 2단계(적용): 배열 파서에서 마커를 별도 분기로 — payload 를 아예 읽지 않는다</span>
+<span class="kw">while</span> raw[i] != END:
+    t = raw[i]
+    <span class="kw">if</span> t <span class="kw">in</span> (<span class="nm">0x02</span>, <span class="nm">0x03</span>):   <span class="cm"># 0 마커: 태그 1바이트만 소비</span>
+        i += <span class="nm">1</span>; arr.append(<span class="nm">0</span>)
+    <span class="kw">elif</span> t <span class="kw">in</span> SCALAR_FMT:    <span class="cm"># 그 외 수치: 자기 폭만큼 payload 소비</span>
+        i += <span class="nm">1</span>; arr.append(unpack_at(t, i))</pre>
+        <div class="why"><b>핵심 아이디어:</b> 배열 안에서는 <code>02 02</code> 가 "마커 둘(0,0)"인지 "태그+값(2)"인지
+        그 자리만 봐서는 알 수 없습니다. 그래서 <b>모호성이 없는 위치(이름 필드)에서 통계를 내서</b> 태그의
+        의미를 먼저 확정하고, 그 결론을 배열에 적용했습니다. "0은 항상 0x02/0x03, 실값은 항상 0x04" 라는
+        불변식 덕분에 배열 파싱에서 마커 판정이 아예 필요 없어집니다 — 모호성의 원천 제거.</div>
       </div>
     </div>
   </div>
@@ -427,6 +477,22 @@
           <div class="res" style="margin-top:0">bare 문자열들을 둘씩 짝지어 <span class="strike"><code>{TRUE: "TRUE"}</code></span> 로 오독 — 짝수 개면 에러 없이 조용히 틀립니다. 테두리 친 <b>post-NUL 1바이트</b>가 두 오독을 모두 차단.</div>
         </div>
       </div>
+
+      <div class="algo">
+        <div class="algo-h"><span class="dot"></span>해결 알고리즘 — 1바이트 룩어헤드 판별<span class="src">dd_main.py · _read_array</span></div>
+        <pre><span class="kw">if</span> t == <span class="nm">0x09</span>:                       <span class="cm"># 배열 안 문자열 원소</span>
+    s, i = read_cstr(raw, i+<span class="nm">1</span>)       <span class="cm"># 일단 NUL까지 문자열을 읽고,</span>
+    nxt = raw[i]                     <span class="cm"># NUL "직후 1바이트"만 미리 본다</span>
+    <span class="kw">if</span> nxt <span class="kw">in</span> (<span class="nm">0x0A</span>, <span class="nm">0x0B</span>):         <span class="cm"># 컨테이너가 붙어 있으면</span>
+        arr.append({s: read_value(nxt)})  <span class="cm"># → {이름: struct/array} 원소</span>
+    <span class="kw">else</span>:                            <span class="cm"># 아니면</span>
+        arr.append(s)                <span class="cm"># → bare 문자열 값</span></pre>
+        <div class="why"><b>왜 1바이트만 봐도 결정적인가 (귀류법):</b>
+        (a) 이름있는 원소를 bare 문자열로 잘못 읽으면 → 바로 뒤의 <code>0A/0B</code> 가 "문자열 배열 속 컨테이너"가
+        되어 범주 위반으로 즉시 모순. (b) 반대로 bare 문자열들을 이름 원소로 잘못 읽으면 → 문자열 뒤에 컨테이너가
+        없으므로 이 역시 성립 불가. 즉 <b>두 해석이 동시에 정합할 수 있는 바이트열이 존재하지 않아</b>,
+        post-NUL 1바이트 검사가 완전한 판별자가 됩니다.</div>
+      </div>
     </div>
   </div>
 
@@ -452,7 +518,48 @@
           <div class="res" style="margin-top:0"><code>05 00 81</code> 을 int8 셋으로 읽어 <span class="strike">[5, 0, 129]</span> 처럼 어긋납니다. 배열은 <b>엄격 동질이 아니라 범주 동질</b> — 수치(0x04~0x08)끼리는 폭이 달라도 섞일 수 있습니다. 단 수치↔문자열↔컨테이너 교차는 없음 → 나오면 디싱크 신호.</div>
         </div>
       </div>
+
+      <div class="algo">
+        <div class="algo-h"><span class="dot"></span>해결 알고리즘 — 원소별 자기 태그가 폭을 결정 + 범주 불변식 검사<span class="src">dd_main.py</span></div>
+        <pre><span class="cm"># 폭 테이블: 태그 → (포맷, 바이트수). 배열 차원의 "공통 폭" 개념을 아예 버린다</span>
+SCALAR_FMT = { <span class="nm">0x04</span>: (<span class="st">'&gt;b'</span>, <span class="nm">1</span>), <span class="nm">0x05</span>: (<span class="st">'&gt;h'</span>, <span class="nm">2</span>), <span class="nm">0x06</span>: (<span class="st">'&gt;i'</span>, <span class="nm">4</span>), <span class="nm">0x08</span>: (<span class="st">'&gt;d'</span>, <span class="nm">8</span>), … }
+
+<span class="kw">while</span> raw[i] != END:
+    t = raw[i]; i += <span class="nm">1</span>
+    fmt, size = SCALAR_FMT[t]        <span class="cm"># 원소마다 "자기 태그"로 폭을 새로 결정</span>
+    arr.append(unpack(fmt, raw[i:i+size])); i += size
+
+    <span class="cm"># 범주 불변식: 첫 원소의 범주(수치/문자열/컨테이너)를 dom 에 기록,</span>
+    <span class="cm"># 이후 원소가 범주를 벗어나면 → 값이 아니라 파싱 디싱크로 판정</span>
+    dom = dom <span class="kw">or</span> category(t)
+    <span class="kw">assert</span> category(t) == dom</pre>
+        <div class="why"><b>핵심 아이디어:</b> "배열 = 한 타입" 가정을 버리고 <b>폭 결정을 원소 단위로 국소화</b>하면,
+        int8→enum 승격이 배열 중간에 일어나도 각 원소가 자기 폭만큼만 정확히 소비하므로 파싱이 결정적입니다.
+        대신 실코퍼스에서 관측된 더 약한 불변식(<b>범주 동질성</b>)을 검사로 남겨서, 진짜 어긋남(수치 배열에
+        문자열/컨테이너 태그 등장)은 놓치지 않고 잡아냅니다.</div>
+      </div>
     </div>
+  </div>
+</section>
+
+<!-- 7. 전체 검증 -->
+<section>
+  <div class="sec-head"><span class="sec-num">07</span><h2>이 규칙들이 맞다는 건 어떻게 증명했나</h2></div>
+  <p class="sub">위 네 해법은 각각의 지점을 고치지만, "규칙 전체가 파일 전체를 유일하게 설명하는가"는 별도 알고리즘으로 검증했습니다.</p>
+
+  <div class="algo" style="margin-top:0">
+    <div class="algo-h"><span class="dot"></span>백트래킹 전수 탐색 — 해가 정확히 1개인지 센다<span class="src">dd_strict.py</span></div>
+    <pre><span class="cm"># 모호할 수 있는 지점(0값 생략 여부, 배열 원소 해석 등)마다 후보를 전부 분기,</span>
+<span class="cm"># "파일 경계(n-4)에서 정확히 끝나는" 파스 트리만 해(解)로 인정한다</span>
+solutions = enumerate_all_parses(raw[<span class="nm">4</span>:-<span class="nm">4</span>])   <span class="cm"># 명시적 스택 백트래킹</span>
+
+<span class="kw">if</span> len(solutions) == <span class="nm">1</span>:  status = <span class="st">'unique'</span>     <span class="cm"># 유일해 — 규칙이 충분함 ✓</span>
+<span class="kw">elif</span> len(solutions) == <span class="nm">0</span>: status = <span class="st">'failed'</span>    <span class="cm"># 구조 오류 — 실패 지점 hexdump 진단</span>
+<span class="kw">else</span>:                    status = <span class="st">'ambiguous'</span>  <span class="cm"># 모호 — 두 해가 갈라지는 첫 지점 diff 출력</span></pre>
+    <div class="why"><b>결과:</b> 실코퍼스 605개 전부 <b>unique(유일해)</b> — 모호 0건, 오류 0건.
+    즉 위 규칙 집합은 코퍼스의 모든 바이트를 <b>단 한 가지 방법으로만</b> 설명합니다. 휴리스틱 단일-pass 파서
+    (<code>dd_main.py</code>)와 결과도 100% 일치. 규칙이 하나라도 틀리면(예: 0x02 가 비영값을 싣는 반례 등장)
+    이 검증기가 즉시 '모호' 또는 '불일치'로 잡아냅니다.</div>
   </div>
 </section>
 
