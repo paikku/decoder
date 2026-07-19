@@ -341,12 +341,29 @@ scalar := number | TRUE | FALSE | <undef> | "quoted" | bareword
 
 ---
 
-## 5. 검증 도구
+## 5. 도구
+
+### 운영 (현재 트리)
 
 | 도구 | 역할 |
 |---|---|
-| `dd_strict.py` | 백트래킹 검증 파서 — 전역 검증(경계/미지태그/이름) + 실패 진단(hex)·복구. 디코딩 출력: `--out-dir DIR`(파일별 txt), `--json PATH`, `--print SUBSTR` |
-| `dd_main.py` | 단일 pass 휴리스틱 파서 + 체크섬 검증(`dd_trailer_ok`) |
-| `dd_analyze.py` | 태그 의미론 코퍼스 측정 (읽기 전용) — §1.3 측정 요약의 출처 |
+| `dd_main.py` | **디코더 본체** — .dd/.tdf(ZIP) 파싱 + 체크섬 검증(`dd_trailer_ok`) + 형식 감지(`detect_format`) + CLI(폴더/단일/`--raw`·JSON·스켈레톤·발굴). 실코퍼스 1255개에서 pure 문법과 동치 확인됨. |
+
+### 리버스엔지니어링/검증 도구 (제거됨 — git 이력에서 복구 가능)
+
+포맷 규칙이 실코퍼스 1255개로 **pure-A1 확정**(상단 검증 상태 참조)된 뒤,
+운영에 불필요한 아래 도구들은 트리에서 제거했다. 필요하면 git 이력의
+커밋 `3e3ecb0`(제거 직전)에서 되살릴 수 있다.
+
+| 도구 | 역할 (당시) |
+|---|---|
+| `dd_strict.py` | 백트래킹 검증 파서 — 전역 검증(경계/유일해) + 실패 진단·복구(salvage) |
+| `dd_unified.py` | 공리 A1·A2 파서 — "예외 4개 = 공리 2개" 환원의 참조 구현(safe/pure) |
+| `dd_prove.py` | 증명 러너 — 생성모델 차분·오라클 교차·반례·퍼즈·`measure`(pure-A1 판별) |
+| `dd_analyze.py` | 태그 의미론 코퍼스 측정(읽기 전용) — §1.3 측정 요약의 출처 |
 | `trailer_probe.py` | 트레일러 체크섬 표준 알고리즘 그리드 탐색 |
-| `trailer_solve.py` | 체크섬 역산 솔버 (GF(2) GCD / 곱셈 해시 복원) — §1.1 확정의 출처 |
+| `trailer_solve.py` | 체크섬 역산 솔버(GF(2) GCD / 곱셈 해시 복원) — §1.1 확정의 출처 |
+
+> 시각화 문서: `decoding_rules.html`(디코딩 룰), `byte_structure.html`(바이트
+> 구조·예외의 공리 환원), `reading_model.html`(값이 태그를 고른다 — 새 해석)
+> 는 포맷 참조 문서로 유지한다.
