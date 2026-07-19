@@ -813,14 +813,12 @@ solutions = enumerate_all_parses(raw[<span class="nm">4</span>:-<span class="nm"
         </table>
       </div>
 
-      <p style="margin:16px 0 0;font-size:14px;color:var(--ink-soft)"><b>확정까지 남은 측정 1회:</b> 실코퍼스에서
-      <code>python dd_prove.py measure dumps/</code> — 카운터 [1]~[5] 가 전부 0 이면 코퍼스는 pure 이미지 안이고
-      생략 룩어헤드가 전혀 없는 결정적 파서로 충분합니다. <b>남은 미결(적대 검증으로 정밀화):</b>
-      ⑴ 0x06 제로 1건·0x08 제로 352건이 explicit payload 인지 생략인지, ⑵ 0x02/0x03 제로 652건이 폭0인지
-      explicit <code>00</code> payload 인지 (measure 카운터 [4][5]), ⑶ 0x05/0x06 의 부호(int16 vs uint16)와
-      승격 경계(32767 vs 65535) — 음수·경계 값 미관측, ⑷ 0x01 의 정체. 그리고 스펙 문서 자체의 내부 모순
-      한 건: §1.3 "0x06 1개(0)" vs §4 "logical_scan_id=129366(비영)" — 매직 없는 변형 파일이 측정에서
-      제외된 스코프 문제로 추정.</p>
+      <div class="verified" style="margin:16px 0 0">✓ 측정 완료 (dd_prove.py measure, 실코퍼스 1255개): walk 실패 0 · 카운터 [1]~[5] 전부 0 → 코퍼스 전부 pure 이미지 안</div>
+      <p style="margin:12px 0 0;font-size:14px;color:var(--ink-soft)"><b>확정:</b> 실데이터 1255개가 전부 pure 문법으로
+      경계까지 완주하고, wide 생략·폭1 생략·<code>04 00</code>·폭0 비정상이 <b>0건</b>. 즉 예외 4가지와 생략
+      룩어헤드는 <b>실제로 하나도 필요 없으며</b>, 공리 A1·A2 두 줄로 코퍼스 전 바이트가 <b>해 유일하게</b>
+      디코딩됩니다. <b>남은 미결은 인코딩 구조가 아니라 값 의미뿐:</b> 0x05/0x06 의 부호(int16 vs uint16 —
+      음수·경계값 미관측)와 0x01 의 정체. 이건 measure 로는 판별 불가(직교)라 해당 값이 든 새 덤프가 필요합니다.</p>
     </div>
   </div>
 </section>

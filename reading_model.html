@@ -355,9 +355,10 @@
     </div>
   </div>
 
-  <div style="margin-top:18px"><span class="verified">✓ 이 두 공리로 재구현한 파서(dd_unified.py) — 실측 패턴 15종 통과 · 생성 코퍼스 수천 파일서 기존 파서와 동치</span></div>
+  <div style="margin-top:18px"><span class="verified">✓ dd_unified.py — 실측 패턴 15종 · 생성 코퍼스 수천 파일 동치 · <b>실코퍼스 1255개 전수 pure 확정</b>(measure walk 실패 0, 카운터 전부 0)</span></div>
   <p class="fine" style="margin-top:14px">정리: <b>A1</b> 값이 태그(폭)를 고른다 + <b>A2</b> <code>element := named_container | bare_value</code>.
-  이 둘이면 예외 4개가 다 설명됩니다. 남은 미결은 폭이 아니라 <b>부호</b>(int16 vs uint16 — 음수·경계값 미관측)와 0x01 의 정체뿐.</p>
+  이 둘이면 예외 4개가 다 설명되고, <b>실데이터 1255개가 전부 이 두 줄만으로 룩어헤드 없이 해 유일하게 디코딩됨을 측정으로 확정</b>했습니다.
+  남은 미결은 인코딩 구조가 아니라 <b>값 의미</b>뿐 — 부호(int16 vs uint16 — 음수·경계값 미관측)와 0x01 의 정체.</p>
 </section>
 
 </main>
