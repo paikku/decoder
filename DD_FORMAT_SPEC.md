@@ -387,6 +387,6 @@ python3 dd_main.py <폴더|.tdf> --diagnose           # TDF 내 각 .dd 진단
 | `trailer_probe.py` | 트레일러 체크섬 표준 알고리즘 그리드 탐색 |
 | `trailer_solve.py` | 체크섬 역산 솔버(GF(2) GCD / 곱셈 해시 복원) — §1.1 확정의 출처 |
 
-> 시각화 문서: `decoding_rules.html`(디코딩 룰), `byte_structure.html`(바이트
-> 구조·예외의 공리 환원), `reading_model.html`(값이 태그를 고른다 — 새 해석)
-> 는 포맷 참조 문서로 유지한다.
+> 시각화 문서: `byte_structure.html`(바이트 구조·4 예외의 공리 환원·디싱크
+> 신호)를 포맷 참조 문서로 유지한다. (`decoding_rules.html`·`reading_model.html`
+> 은 내용이 여기에 포섭되어 제거 — git 이력 `90e869a` 이전에서 복구 가능.)
