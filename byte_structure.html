@@ -1,0 +1,841 @@
+<meta charset="utf-8">
+<title>.dd 바이트 구조 한눈에</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root{
+    --bg:#f6f8f9; --bg-raise:#ffffff; --bg-sunken:#eef2f3;
+    --ink:#16232a; --ink-soft:#47606c; --ink-faint:#7d95a1;
+    --line:#d6e0e4; --line-soft:#e5edef;
+    --accent:#0e8ea3; --accent-ink:#0a6f80;
+    --shadow:0 1px 2px rgba(16,40,50,.05), 0 8px 28px rgba(16,40,50,.07);
+    --r-magic:#5b6b76;   --r-magic-bg:#e7ecef;
+    --r-type:#4f46b8;    --r-type-bg:#e9e7f8;
+    --r-name:#7c3aed;    --r-name-bg:#f0e9fb;
+    --r-subtype:#c26a0a; --r-subtype-bg:#fbeede;
+    --r-value:#0f8a53;   --r-value-bg:#e2f4ea;
+    --r-container:#0e8ea3;--r-container-bg:#dcf1f4;
+    --r-end:#c2385a;     --r-end-bg:#fbe4ea;
+    --r-trailer:#8a5cf0; --r-trailer-bg:#ece5fc;
+    --good:#16a34a; --bad:#c2385a;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans KR",sans-serif;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#0d1418; --bg-raise:#141e24; --bg-sunken:#0a1013;
+      --ink:#e4edf0; --ink-soft:#9db1bb; --ink-faint:#65808c;
+      --line:#22323a; --line-soft:#1a272e;
+      --accent:#2ec4dc; --accent-ink:#7fe0ef;
+      --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 34px rgba(0,0,0,.45);
+      --r-magic:#9fb2bd;   --r-magic-bg:#212e35;
+      --r-type:#a5a0f0;    --r-type-bg:#26243f;
+      --r-name:#c4a3fb;    --r-name-bg:#2c2442;
+      --r-subtype:#f0a94e; --r-subtype-bg:#3a2a12;
+      --r-value:#4fd191;   --r-value-bg:#123326;
+      --r-container:#2ec4dc;--r-container-bg:#0e3138;
+      --r-end:#f0768f;     --r-end-bg:#3a1622;
+      --r-trailer:#b295fb; --r-trailer-bg:#251d3d;
+      --good:#4fd191; --bad:#f0768f;
+    }
+  }
+  :root[data-theme="light"]{
+    --bg:#f6f8f9; --bg-raise:#ffffff; --bg-sunken:#eef2f3;
+    --ink:#16232a; --ink-soft:#47606c; --ink-faint:#7d95a1;
+    --line:#d6e0e4; --line-soft:#e5edef;
+    --accent:#0e8ea3; --accent-ink:#0a6f80;
+    --shadow:0 1px 2px rgba(16,40,50,.05), 0 8px 28px rgba(16,40,50,.07);
+    --r-magic:#5b6b76;--r-magic-bg:#e7ecef;--r-type:#4f46b8;--r-type-bg:#e9e7f8;
+    --r-name:#7c3aed;--r-name-bg:#f0e9fb;--r-subtype:#c26a0a;--r-subtype-bg:#fbeede;
+    --r-value:#0f8a53;--r-value-bg:#e2f4ea;--r-container:#0e8ea3;--r-container-bg:#dcf1f4;
+    --r-end:#c2385a;--r-end-bg:#fbe4ea;--r-trailer:#8a5cf0;--r-trailer-bg:#ece5fc;
+    --good:#16a34a;--bad:#c2385a;
+  }
+  :root[data-theme="dark"]{
+    --bg:#0d1418; --bg-raise:#141e24; --bg-sunken:#0a1013;
+    --ink:#e4edf0; --ink-soft:#9db1bb; --ink-faint:#65808c;
+    --line:#22323a; --line-soft:#1a272e;
+    --accent:#2ec4dc; --accent-ink:#7fe0ef;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 34px rgba(0,0,0,.45);
+    --r-magic:#9fb2bd;--r-magic-bg:#212e35;--r-type:#a5a0f0;--r-type-bg:#26243f;
+    --r-name:#c4a3fb;--r-name-bg:#2c2442;--r-subtype:#f0a94e;--r-subtype-bg:#3a2a12;
+    --r-value:#4fd191;--r-value-bg:#123326;--r-container:#2ec4dc;--r-container-bg:#0e3138;
+    --r-end:#f0768f;--r-end-bg:#3a1622;--r-trailer:#b295fb;--r-trailer-bg:#251d3d;
+    --good:#4fd191;--bad:#f0768f;
+  }
+
+  *{box-sizing:border-box}
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.6;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:960px;margin:0 auto;padding:0 20px}
+  code{font-family:var(--mono);font-size:.93em}
+
+  header{padding:44px 0 30px;border-bottom:1px solid var(--line)}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:var(--accent-ink);font-weight:600;margin:0 0 12px}
+  h1{font-size:clamp(26px,4.6vw,40px);margin:0 0 10px;letter-spacing:-.02em;font-weight:800;line-height:1.1;text-wrap:balance}
+  .lead{color:var(--ink-soft);margin:0;max-width:58ch}
+
+  section{padding:42px 0;border-bottom:1px solid var(--line-soft)}
+  .sec-head{display:flex;align-items:baseline;gap:12px;margin:0 0 6px}
+  .sec-num{font-family:var(--mono);color:var(--accent);font-weight:700;font-size:14px}
+  h2{font-size:clamp(19px,3vw,25px);margin:0;letter-spacing:-.015em;font-weight:750}
+  .sub{color:var(--ink-soft);margin:6px 0 22px;max-width:62ch;font-size:14.5px}
+
+  /* ===== 바이트 스트립 ===== */
+  .strip-card{background:var(--bg-raise);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:20px;overflow-x:auto}
+  .strip-card+.strip-card{margin-top:14px}
+  .strip-title{font-size:14px;font-weight:700;margin:0 0 14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .strip-title .tt{font-family:var(--mono);font-size:11px;font-weight:700;padding:2px 8px;border-radius:5px}
+  .strip{display:flex;align-items:stretch;gap:0;font-family:var(--mono);width:max-content;min-width:100%}
+  .strip+.strip{margin-top:10px}
+
+  /* 그룹: 바이트 셀 묶음 + 아래 라벨 */
+  .grp{display:flex;flex-direction:column;margin-right:8px}
+  .grp:last-child{margin-right:0}
+  .cells{display:flex;gap:2px}
+  .cell{
+    min-width:34px;height:40px;display:grid;place-items:center;
+    font-size:12.5px;font-weight:700;border-radius:6px;padding:0 7px;white-space:nowrap;
+    background:var(--c-bg);color:var(--c-fg);border:1.5px solid color-mix(in srgb,var(--c-fg) 35%,transparent);
+  }
+  .cell.wide{min-width:0}
+  .cell.ellip{background:transparent;border-style:dashed;color:var(--ink-faint);border-color:var(--line)}
+  .glabel{
+    margin-top:6px;text-align:center;font-size:10.5px;font-weight:600;letter-spacing:.05em;
+    color:var(--c-fg);border-top:2px solid color-mix(in srgb,var(--c-fg) 55%,transparent);
+    padding-top:4px;text-transform:uppercase;line-height:1.35;
+  }
+  .glabel .sz{display:block;color:var(--ink-faint);font-weight:500;letter-spacing:0;text-transform:none}
+  .g-magic{--c-fg:var(--r-magic);--c-bg:var(--r-magic-bg)}
+  .g-type{--c-fg:var(--r-type);--c-bg:var(--r-type-bg)}
+  .g-name{--c-fg:var(--r-name);--c-bg:var(--r-name-bg)}
+  .g-subtype{--c-fg:var(--r-subtype);--c-bg:var(--r-subtype-bg)}
+  .g-value{--c-fg:var(--r-value);--c-bg:var(--r-value-bg)}
+  .g-container{--c-fg:var(--r-container);--c-bg:var(--r-container-bg)}
+  .g-end{--c-fg:var(--r-end);--c-bg:var(--r-end-bg)}
+  .g-trailer{--c-fg:var(--r-trailer);--c-bg:var(--r-trailer-bg)}
+  .g-plain{--c-fg:var(--ink-soft);--c-bg:var(--bg-sunken)}
+
+  /* 문맥 블록(흐리게) + 특이 지점 프레임 */
+  .grp.ctx{opacity:.42}
+  .hot{display:flex;align-items:stretch;padding:12px 10px 8px;margin-right:8px;margin-top:6px;
+    border:2px dashed var(--accent);border-radius:12px;position:relative;flex-shrink:0}
+  .hot::before{content:attr(data-label);position:absolute;top:-9px;left:10px;font-size:10px;font-weight:800;
+    letter-spacing:.08em;background:var(--bg-raise);color:var(--accent-ink);padding:0 7px;
+    text-transform:uppercase;white-space:nowrap;font-family:var(--mono)}
+  .cmp .hot::before{background:var(--bg-raise)}
+  .strip.has-hot{padding-top:8px}
+
+  .note{font-size:13px;color:var(--ink-soft);margin:14px 0 0}
+  .note b{color:var(--ink)}
+
+  /* 범례 */
+  .legend{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0 0}
+  .lg{display:inline-flex;align-items:center;gap:7px;font-family:var(--mono);font-size:11.5px;
+    border:1px solid var(--line);background:var(--bg-raise);border-radius:999px;padding:4px 11px 4px 8px;color:var(--ink-soft)}
+  .lg .sw{width:11px;height:11px;border-radius:4px}
+
+  /* ===== 폭 비교 다이어그램 ===== */
+  .widths{display:flex;flex-direction:column;gap:8px;font-family:var(--mono)}
+  .wrow{display:grid;grid-template-columns:64px 90px 1fr;gap:14px;align-items:center;
+    background:var(--bg-raise);border:1px solid var(--line-soft);border-radius:10px;padding:10px 14px}
+  @media(max-width:620px){.wrow{grid-template-columns:56px 76px 1fr;gap:8px}}
+  .wtag{font-weight:800;font-size:13px;color:var(--w-fg)}
+  .wname{font-size:12px;color:var(--ink-soft)}
+  .wbar{display:flex;align-items:center;gap:8px;min-width:0}
+  .wcells{display:flex;gap:2px;flex-shrink:0}
+  .wc{width:22px;height:22px;border-radius:5px;background:var(--w-bg);border:1.5px solid color-mix(in srgb,var(--w-fg) 40%,transparent)}
+  .wc.ghost{background:transparent;border-style:dashed;opacity:.6}
+  .wc.var{width:44px;background:repeating-linear-gradient(45deg,var(--w-bg),var(--w-bg) 4px,transparent 4px,transparent 8px);border-style:dashed}
+  .wnote{font-size:11.5px;color:var(--ink-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .w-num{--w-fg:var(--r-subtype);--w-bg:var(--r-subtype-bg)}
+  .w-str{--w-fg:var(--r-value);--w-bg:var(--r-value-bg)}
+  .w-cont{--w-fg:var(--r-container);--w-bg:var(--r-container-bg)}
+  .w-end{--w-fg:var(--r-end);--w-bg:var(--r-end-bg)}
+
+  /* ===== 중첩 다이어그램 ===== */
+  .nest{font-family:var(--mono);font-size:13px;line-height:2.1;background:var(--bg-raise);
+    border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:20px 22px;overflow-x:auto}
+  .nest .row{white-space:nowrap}
+  .nb{display:inline-block;padding:1px 8px;border-radius:6px;font-weight:700;margin:0 2px;
+    background:var(--c-bg);color:var(--c-fg);border:1.5px solid color-mix(in srgb,var(--c-fg) 35%,transparent)}
+  .depth{display:inline-block;width:26px;border-left:2px solid var(--line);margin-left:12px}
+  .nest .cmt{color:var(--ink-faint);font-size:12px;margin-left:10px}
+
+  /* ===== 예외 카드 ===== */
+  .exc{border-radius:14px;border:1px solid var(--line);background:var(--bg-raise);box-shadow:var(--shadow);overflow:hidden;margin-top:18px}
+  .exc-h{display:flex;gap:12px;align-items:center;padding:14px 20px;border-bottom:1px solid var(--line-soft);background:var(--bg-sunken)}
+  .exc-h .no{width:30px;height:30px;flex:0 0 30px;border-radius:8px;background:var(--accent);color:#fff;
+    display:grid;place-items:center;font-weight:800;font-family:var(--mono);font-size:15px}
+  .exc-h h3{margin:0;font-size:16px;letter-spacing:-.01em}
+  .exc-b{padding:18px 20px}
+  .exc-b>p{margin:0 0 14px;font-size:14.5px;color:var(--ink-soft)}
+  .exc-b>p b{color:var(--ink)}
+
+  .compare{display:flex;flex-direction:column;gap:10px}
+  .cmp{border:1px solid var(--line-soft);border-radius:10px;padding:12px 14px;overflow-x:auto}
+  .cmp .tag{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11.5px;font-weight:800;
+    letter-spacing:.06em;margin-bottom:10px;text-transform:uppercase}
+  .cmp.ok{border-left:4px solid var(--good)} .cmp.ok .tag{color:var(--good)}
+  .cmp.ng{border-left:4px solid var(--bad)} .cmp.ng .tag{color:var(--bad)}
+  .cmp .res{font-family:var(--mono);font-size:12.5px;margin-top:10px;color:var(--ink-soft)}
+  .cmp .res b{color:var(--ink)}
+  .strike{text-decoration:line-through;text-decoration-color:var(--bad);text-decoration-thickness:2px}
+
+  /* ===== 해결 알고리즘 블록 ===== */
+  .algo{margin-top:14px;border:1px solid var(--line-soft);border-radius:10px;background:var(--bg-sunken);overflow:hidden}
+  .algo-h{display:flex;align-items:center;gap:8px;padding:9px 14px;font-size:11.5px;font-weight:800;
+    letter-spacing:.08em;text-transform:uppercase;color:var(--accent-ink);border-bottom:1px solid var(--line-soft)}
+  .algo-h .dot{width:8px;height:8px;border-radius:50%;background:var(--accent)}
+  .algo-h .src{margin-left:auto;font-family:var(--mono);font-size:10.5px;font-weight:600;color:var(--ink-faint);text-transform:none;letter-spacing:0}
+  .algo pre{margin:0;padding:12px 16px;font-family:var(--mono);font-size:12.5px;line-height:1.75;overflow-x:auto;color:var(--ink)}
+  .algo .cm{color:var(--ink-faint)} .algo .kw{color:var(--r-type)} .algo .st{color:var(--r-value)} .algo .nm{color:var(--r-subtype)}
+  .algo .why{padding:10px 16px;font-size:13px;color:var(--ink-soft);border-top:1px dashed var(--line)}
+  .algo .why b{color:var(--ink)}
+
+  footer{padding:34px 0 54px;color:var(--ink-faint);font-size:13px;text-align:center}
+
+  .theme-btn{position:fixed;top:16px;right:16px;z-index:20;width:40px;height:40px;border-radius:10px;
+    border:1px solid var(--line);background:var(--bg-raise);color:var(--ink);cursor:pointer;font-size:17px;
+    box-shadow:var(--shadow);transition:.15s}
+  .theme-btn:hover{border-color:var(--accent);transform:translateY(-1px)}
+</style>
+
+<button class="theme-btn" id="themeToggle" aria-label="라이트/다크 전환" title="테마 전환">◐</button>
+
+<header>
+  <div class="wrap">
+    <p class="eyebrow">.dd Binary TLV · Byte Layout</p>
+    <h1>바이트 구조 한눈에</h1>
+    <p class="lead">칸 하나 = 바이트 하나. 색은 역할입니다.
+    파일 전체 → 필드 하나 → 값의 폭 → 중첩 → 배열, 그리고 파서가 넘어지는 <b>예외 4가지</b>까지.</p>
+    <div class="legend">
+      <span class="lg"><span class="sw" style="background:var(--r-magic)"></span>매직/트레일러 틀</span>
+      <span class="lg"><span class="sw" style="background:var(--r-type)"></span>Type(0x09)</span>
+      <span class="lg"><span class="sw" style="background:var(--r-name)"></span>이름</span>
+      <span class="lg"><span class="sw" style="background:var(--r-subtype)"></span>SubType/수치</span>
+      <span class="lg"><span class="sw" style="background:var(--r-value)"></span>값</span>
+      <span class="lg"><span class="sw" style="background:var(--r-container)"></span>컨테이너</span>
+      <span class="lg"><span class="sw" style="background:var(--r-end)"></span>END(0x00)</span>
+      <span class="lg"><span class="sw" style="background:var(--ink-faint);opacity:.4"></span>흐린 칸 = 앞뒤 문맥</span>
+      <span class="lg"><span class="sw" style="background:transparent;border:2px dashed var(--accent)"></span>점선 프레임 = 특이 지점</span>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+<!-- 1. 파일 전체 -->
+<section>
+  <div class="sec-head"><span class="sec-num">01</span><h2>파일 전체 — 앞 4B 매직, 뒤 4B 트레일러</h2></div>
+  <p class="sub">그 사이 전부가 하나의 최상위 STRUCT 입니다. 0x0B 로 열고 0x00 으로 닫습니다.</p>
+
+  <div class="strip-card">
+    <div class="strip">
+      <div class="grp g-magic">
+        <div class="cells"><div class="cell">17</div><div class="cell">FA</div><div class="cell">AE</div><div class="cell">4E</div></div>
+        <div class="glabel">MAGIC<span class="sz">4B 고정</span></div>
+      </div>
+      <div class="grp g-container">
+        <div class="cells"><div class="cell">0B</div></div>
+        <div class="glabel">STRUCT 열기<span class="sz">1B</span></div>
+      </div>
+      <div class="grp g-plain">
+        <div class="cells"><div class="cell ellip wide" style="min-width:150px">… 필드들 반복 …</div></div>
+        <div class="glabel" style="--c-fg:var(--ink-soft)">본문<span class="sz">가변</span></div>
+      </div>
+      <div class="grp g-end">
+        <div class="cells"><div class="cell">00</div></div>
+        <div class="glabel">END 닫기<span class="sz">1B</span></div>
+      </div>
+      <div class="grp g-trailer">
+        <div class="cells"><div class="cell">BC</div><div class="cell">94</div><div class="cell">26</div><div class="cell">A8</div></div>
+        <div class="glabel">TRAILER<span class="sz">4B 체크섬</span></div>
+      </div>
+    </div>
+    <p class="note">파싱 전에 <b>맨 끝 4바이트를 떼어놓고</b> 시작합니다 — 트레일러는 구조가 아닙니다.</p>
+  </div>
+</section>
+
+<!-- 2. 필드 하나 -->
+<section>
+  <div class="sec-head"><span class="sec-num">02</span><h2>필드 하나 = 네 조각</h2></div>
+  <p class="sub">본문은 이 패턴의 반복입니다. 이름 있는 필드는 <b>항상 0x09 로 시작</b>합니다.</p>
+
+  <div class="strip-card">
+    <div class="strip has-hot">
+      <div class="grp g-container ctx">
+        <div class="cells"><div class="cell">0B</div></div>
+        <div class="glabel">STRUCT 열기</div>
+      </div>
+      <div class="grp g-plain ctx">
+        <div class="cells"><div class="cell ellip wide" style="min-width:84px">… 앞 필드들</div></div>
+        <div class="glabel" style="--c-fg:var(--ink-soft)">문맥</div>
+      </div>
+      <div class="hot" data-label="필드 하나 = 네 조각">
+        <div class="grp g-type">
+          <div class="cells"><div class="cell">09</div></div>
+          <div class="glabel">Type<span class="sz">1B 고정</span></div>
+        </div>
+        <div class="grp g-name">
+          <div class="cells">
+            <div class="cell">l</div><div class="cell">e</div><div class="cell">n</div><div class="cell">s</div>
+            <div class="cell ellip">…</div><div class="cell">00</div>
+          </div>
+          <div class="glabel">Name (ASCII)<span class="sz">가변 · NUL 종료</span></div>
+        </div>
+        <div class="grp g-subtype">
+          <div class="cells"><div class="cell">08</div></div>
+          <div class="glabel">SubType<span class="sz">1B — 값 타입</span></div>
+        </div>
+        <div class="grp g-value">
+          <div class="cells">
+            <div class="cell">3F</div><div class="cell">D0</div><div class="cell">00</div><div class="cell">00</div>
+            <div class="cell">00</div><div class="cell">00</div><div class="cell">00</div><div class="cell">00</div>
+          </div>
+          <div class="glabel">Value<span class="sz">SubType 이 폭 결정</span></div>
+        </div>
+      </div>
+      <div class="grp g-type ctx">
+        <div class="cells"><div class="cell">09</div></div>
+        <div class="glabel">다음 필드</div>
+      </div>
+      <div class="grp g-name ctx">
+        <div class="cells"><div class="cell wide">"if_sim_mode"</div><div class="cell">00</div></div>
+        <div class="glabel">이름</div>
+      </div>
+      <div class="grp g-plain ctx">
+        <div class="cells"><div class="cell ellip">…</div></div>
+        <div class="glabel" style="--c-fg:var(--ink-soft)">&nbsp;</div>
+      </div>
+      <div class="grp g-end ctx">
+        <div class="cells"><div class="cell">00</div></div>
+        <div class="glabel">END</div>
+      </div>
+    </div>
+    <p class="note">이 예: SubType <b>0x08 = FLOAT64</b> → 값 8바이트 big-endian → <code>0.25</code>.
+    필드가 끝나면 <b>구분자 없이</b> 곧바로 다음 필드의 <code>09</code> 가 이어지고, 형제가 더 없으면 컨테이너를 닫는 <code>00</code> 이 옵니다.</p>
+  </div>
+</section>
+
+<!-- 3. SubType별 폭 -->
+<section>
+  <div class="sec-head"><span class="sec-num">03</span><h2>SubType 1바이트가 값의 폭을 정한다</h2></div>
+  <p class="sub">칸 수 = 값이 차지하는 바이트 수. 점선 칸은 "0이면 생략될 수 있음", 빗금은 가변 길이.</p>
+
+  <div class="widths">
+    <div class="wrow w-end"><span class="wtag">0x00</span><span class="wname">END</span>
+      <div class="wbar"><div class="wcells"></div><span class="wnote">payload 없음 — 컨테이너 닫기</span></div></div>
+    <div class="wrow w-num"><span class="wtag">0x01</span><span class="wname">INT8_A</span>
+      <div class="wbar"><div class="wcells"><div class="wc"></div></div><span class="wnote">1B 부호있는 정수 (희소)</span></div></div>
+    <div class="wrow w-num"><span class="wtag">0x02</span><span class="wname">INT8_B</span>
+      <div class="wbar"><div class="wcells"><div class="wc ghost"></div></div><span class="wnote">0~1B — 실측 <b>0 전용 마커</b> (예외 ①②)</span></div></div>
+    <div class="wrow w-num"><span class="wtag">0x03</span><span class="wname">UINT8</span>
+      <div class="wbar"><div class="wcells"><div class="wc ghost"></div></div><span class="wnote">0~1B — 실측 <b>0 전용 마커</b></span></div></div>
+    <div class="wrow w-num"><span class="wtag">0x04</span><span class="wname">INT8_C</span>
+      <div class="wbar"><div class="wcells"><div class="wc"></div></div><span class="wnote">1B — <b>진짜 int8 값은 여기</b></span></div></div>
+    <div class="wrow w-num"><span class="wtag">0x05</span><span class="wname">ENUM</span>
+      <div class="wbar"><div class="wcells"><div class="wc"></div><div class="wc"></div></div><span class="wnote">2B int16</span></div></div>
+    <div class="wrow w-num"><span class="wtag">0x06</span><span class="wname">BOOL</span>
+      <div class="wbar"><div class="wcells"><div class="wc"></div><div class="wc"></div><div class="wc"></div><div class="wc"></div></div>
+      <span class="wnote">4B int32 — "TRUE" 문자열 아님</span></div></div>
+    <div class="wrow w-num"><span class="wtag">0x07</span><span class="wname">FLOAT32</span>
+      <div class="wbar"><div class="wcells"><div class="wc"></div><div class="wc"></div><div class="wc"></div><div class="wc"></div></div>
+      <span class="wnote">4B IEEE754 (미관측)</span></div></div>
+    <div class="wrow w-num"><span class="wtag">0x08</span><span class="wname">FLOAT64</span>
+      <div class="wbar"><div class="wcells"><div class="wc"></div><div class="wc"></div><div class="wc"></div><div class="wc"></div><div class="wc"></div><div class="wc"></div><div class="wc"></div><div class="wc"></div></div>
+      <span class="wnote">8B IEEE754 — 가장 흔함</span></div></div>
+    <div class="wrow w-str"><span class="wtag">0x09</span><span class="wname">STRING</span>
+      <div class="wbar"><div class="wcells"><div class="wc var"></div><div class="wc"></div></div><span class="wnote">가변 + NUL(00) 종료</span></div></div>
+    <div class="wrow w-cont"><span class="wtag">0x0A</span><span class="wname">ARRAY</span>
+      <div class="wbar"><div class="wcells"><div class="wc var"></div><div class="wc"></div></div><span class="wnote">원소 반복 + END(00) 닫기</span></div></div>
+    <div class="wrow w-cont"><span class="wtag">0x0B</span><span class="wname">STRUCT</span>
+      <div class="wbar"><div class="wcells"><div class="wc var"></div><div class="wc"></div></div><span class="wnote">자식 필드 반복 + END(00) 닫기</span></div></div>
+  </div>
+</section>
+
+<!-- 4. 중첩 -->
+<section>
+  <div class="sec-head"><span class="sec-num">04</span><h2>중첩 — 여는 태그와 END 는 짝</h2></div>
+  <p class="sub">STRUCT/ARRAY 는 값 자리에 자식들을 담고 END(0x00)로 닫습니다. 들여쓰기가 곧 깊이입니다.</p>
+
+  <div class="nest">
+    <div class="row"><span class="nb" style="--c-fg:var(--r-container);--c-bg:var(--r-container-bg)">0B</span><span class="cmt">┐ 최상위 STRUCT 열기</span></div>
+    <div class="row"><span class="depth"></span><span class="nb" style="--c-fg:var(--r-type);--c-bg:var(--r-type-bg)">09</span><span class="nb" style="--c-fg:var(--r-name);--c-bg:var(--r-name-bg)">"outer_struct" 00</span><span class="nb" style="--c-fg:var(--r-subtype);--c-bg:var(--r-subtype-bg)">0B</span><span class="cmt">┐ 필드 값이 또 STRUCT → 한 단계 더</span></div>
+    <div class="row"><span class="depth"></span><span class="depth"></span><span class="nb" style="--c-fg:var(--r-type);--c-bg:var(--r-type-bg)">09</span><span class="nb" style="--c-fg:var(--r-name);--c-bg:var(--r-name-bg)">"ratio" 00</span><span class="nb" style="--c-fg:var(--r-subtype);--c-bg:var(--r-subtype-bg)">08</span><span class="nb" style="--c-fg:var(--r-value);--c-bg:var(--r-value-bg)">3F D0 00 00 00 00 00 00</span><span class="cmt">스칼라 필드</span></div>
+    <div class="row"><span class="depth"></span><span class="depth"></span><span class="nb" style="--c-fg:var(--r-type);--c-bg:var(--r-type-bg)">09</span><span class="nb" style="--c-fg:var(--r-name);--c-bg:var(--r-name-bg)">"mode" 00</span><span class="nb" style="--c-fg:var(--r-subtype);--c-bg:var(--r-subtype-bg)">09</span><span class="nb" style="--c-fg:var(--r-value);--c-bg:var(--r-value-bg)">"SIM_DISABLED" 00</span><span class="cmt">문자열 필드</span></div>
+    <div class="row"><span class="depth"></span><span class="nb" style="--c-fg:var(--r-end);--c-bg:var(--r-end-bg)">00</span><span class="cmt">┘ 안쪽 STRUCT 닫기</span></div>
+    <div class="row"><span class="nb" style="--c-fg:var(--r-end);--c-bg:var(--r-end-bg)">00</span><span class="cmt">┘ 최상위 STRUCT 닫기</span></div>
+  </div>
+  <p class="note">SubType 자리의 <code>0x09</code> 는 "값이 문자열" 이라는 뜻 — 필드 시작의 <code>0x09</code> 와 같은 바이트지만 <b>위치가 역할을 정합니다</b>.</p>
+</section>
+
+<!-- 5. 배열 원소 -->
+<section>
+  <div class="sec-head"><span class="sec-num">05</span><h2>배열 원소 — 이름 없이 태그+값 반복</h2></div>
+  <p class="sub">배열(0x0A) 안 원소는 <b>이름이 없습니다</b>. <code>SubType(1B) + payload</code> 만 반복하고 END 로 닫습니다.</p>
+
+  <div class="strip-card">
+    <div class="strip-title"><span class="tt" style="background:var(--r-container-bg);color:var(--r-container)">enum 배열</span> es_values 실측</div>
+    <div class="strip has-hot">
+      <div class="grp g-type ctx"><div class="cells"><div class="cell">09</div></div><div class="glabel">Type</div></div>
+      <div class="grp g-name ctx"><div class="cells"><div class="cell wide">"es_values"</div><div class="cell">00</div></div><div class="glabel">필드 이름</div></div>
+      <div class="grp g-container"><div class="cells"><div class="cell">0A</div></div><div class="glabel">SubType<span class="sz">= ARRAY</span></div></div>
+      <div class="hot" data-label="원소 = SubType+값 반복 · 이름 없음">
+        <div class="grp g-subtype"><div class="cells"><div class="cell">05</div></div><div class="glabel">enum</div></div>
+        <div class="grp g-value"><div class="cells"><div class="cell">23</div><div class="cell">3D</div></div><div class="glabel">9021</div></div>
+        <div class="grp g-subtype"><div class="cells"><div class="cell">05</div></div><div class="glabel">enum</div></div>
+        <div class="grp g-value"><div class="cells"><div class="cell">19</div><div class="cell">19</div></div><div class="glabel">6425</div></div>
+        <div class="grp g-plain"><div class="cells"><div class="cell ellip">…</div></div><div class="glabel" style="--c-fg:var(--ink-soft)">반복</div></div>
+      </div>
+      <div class="grp g-end"><div class="cells"><div class="cell">00</div></div><div class="glabel">END<span class="sz">배열 닫기</span></div></div>
+      <div class="grp g-type ctx"><div class="cells"><div class="cell">09</div></div><div class="glabel">다음 필드</div></div>
+      <div class="grp g-name ctx"><div class="cells"><div class="cell wide">"next_field"</div><div class="cell">00</div></div><div class="glabel">이름</div></div>
+      <div class="grp g-plain ctx"><div class="cells"><div class="cell ellip">…</div></div><div class="glabel" style="--c-fg:var(--ink-soft)">&nbsp;</div></div>
+    </div>
+    <p class="note">배열도 결국 <b>이름 있는 필드의 값</b>입니다 — <code>09 "es_values" 00</code> 뒤 SubType 자리에 <code>0A</code> 가 온 것.
+    프레임 안(원소들)만 이름이 없고, END 뒤에는 구분자 없이 바로 형제 필드가 이어집니다. 원소는 <b>같은 범주</b>(수치/문자열/컨테이너)를 유지 — 섞이면 디싱크 신호.</p>
+  </div>
+</section>
+
+<!-- 6. 예외 4가지 -->
+<section>
+  <div class="sec-head"><span class="sec-num">06</span><h2>예외 4가지 — 여기서 파서가 넘어진다</h2></div>
+  <p class="sub">"태그 뒤엔 항상 고정폭 payload" 라고 읽으면 어긋나는 지점들. 잘못 읽기 ❌ 와 올바로 읽기 ✓ 를 나란히.</p>
+
+  <!-- 예외 1 -->
+  <div class="exc">
+    <div class="exc-h"><span class="no">1</span><h3>값이 0이면 payload 생략 (이름 필드)</h3></div>
+    <div class="exc-b">
+      <p>SubType 뒤에 payload 없이 <b>다음 필드 앵커</b>(<code>09</code>+이름+<code>00</code>)나 <b>END</b> 가 바로 옵니다.</p>
+      <div class="compare">
+        <div class="cmp ng"><span class="tag">❌ 고정폭 그대로 소비</span>
+          <div class="strip">
+            <div class="grp g-plain ctx"><div class="cells"><div class="cell ellip wide" style="min-width:76px">… 앞 필드</div></div><div class="glabel" style="--c-fg:var(--ink-soft)">문맥</div></div>
+            <div class="grp g-type"><div class="cells"><div class="cell">09</div></div><div class="glabel">Type</div></div>
+            <div class="grp g-name"><div class="cells"><div class="cell wide">"nr_of_used_samples"</div><div class="cell">00</div></div><div class="glabel">이 필드 이름</div></div>
+            <div class="grp g-subtype"><div class="cells"><div class="cell">04</div></div><div class="glabel">int8</div></div>
+            <div class="grp g-value"><div class="cells"><div class="cell strike">09</div></div><div class="glabel">"값"으로 오독</div></div>
+            <div class="grp g-name"><div class="cells"><div class="cell strike">n</div><div class="cell">e</div><div class="cell">x</div><div class="cell">t</div><div class="cell ellip">…</div><div class="cell">00</div></div><div class="glabel">이름 앞글자 깨짐</div></div>
+            <div class="grp g-plain ctx"><div class="cells"><div class="cell ellip wide" style="min-width:96px">… 이후 전부 밀림</div></div><div class="glabel" style="--c-fg:var(--ink-soft)">디싱크</div></div>
+          </div>
+          <div class="res">다음 필드의 <code>09</code> 를 값으로 삼킴 → 그 뒤 모든 바이트의 해석이 어긋남</div>
+        </div>
+        <div class="cmp ok"><span class="tag">✓ 앵커가 보이면 소비 0, 값 0</span>
+          <div class="strip has-hot">
+            <div class="grp g-plain ctx"><div class="cells"><div class="cell ellip wide" style="min-width:76px">… 앞 필드</div></div><div class="glabel" style="--c-fg:var(--ink-soft)">문맥</div></div>
+            <div class="grp g-type"><div class="cells"><div class="cell">09</div></div><div class="glabel">Type</div></div>
+            <div class="grp g-name"><div class="cells"><div class="cell wide">"nr_of_used_samples"</div><div class="cell">00</div></div><div class="glabel">이 필드 이름</div></div>
+            <div class="hot" data-label="payload 0바이트 — 값 0으로 확정">
+              <div class="grp g-subtype"><div class="cells"><div class="cell">04</div></div><div class="glabel">int8<span class="sz">뒤에 값 없음</span></div></div>
+            </div>
+            <div class="grp g-type"><div class="cells"><div class="cell">09</div></div><div class="glabel">앵커 감지!</div></div>
+            <div class="grp g-name"><div class="cells"><div class="cell wide">"next_field"</div><div class="cell">00</div></div><div class="glabel">다음 필드 이름</div></div>
+            <div class="grp g-subtype ctx"><div class="cells"><div class="cell">08</div></div><div class="glabel">SubType</div></div>
+            <div class="grp g-value ctx"><div class="cells"><div class="cell">3F</div><div class="cell ellip">…</div></div><div class="glabel">값 8B</div></div>
+          </div>
+          <div class="res">값 = <b>0</b>, 바이트 소비 없이 다음 필드로. 이 필드가 struct 의 <b>마지막 멤버</b>면 앵커 대신 END(<code>00</code>)가 바로 오는데, 그땐 <b>1B 태그(0x01~0x04)에 한해</b> 같은 처리 — enum/bool/float 은 첫 바이트가 00 이어도 실값일 수 있어 제외.</div>
+        </div>
+        <div class="cmp ok"><span class="tag">✓ 마지막 멤버 변형 — 앵커 대신 END</span>
+          <div class="strip has-hot">
+            <div class="grp g-type ctx"><div class="cells"><div class="cell">09</div></div><div class="glabel">Type</div></div>
+            <div class="grp g-name"><div class="cells"><div class="cell wide">"repeat_count"</div><div class="cell">00</div></div><div class="glabel">마지막 멤버</div></div>
+            <div class="hot" data-label="payload 0바이트 — 값 0">
+              <div class="grp g-subtype"><div class="cells"><div class="cell">04</div></div><div class="glabel">int8</div></div>
+            </div>
+            <div class="grp g-end"><div class="cells"><div class="cell">00</div></div><div class="glabel">END<span class="sz">struct 닫기</span></div></div>
+            <div class="grp g-type ctx"><div class="cells"><div class="cell">09</div></div><div class="glabel">다음 필드</div></div>
+            <div class="grp g-name ctx"><div class="cells"><div class="cell wide">"sibling"</div><div class="cell">00</div></div><div class="glabel">이름</div></div>
+            <div class="grp g-plain ctx"><div class="cells"><div class="cell ellip">…</div></div><div class="glabel" style="--c-fg:var(--ink-soft)">&nbsp;</div></div>
+          </div>
+          <div class="res"><code>04</code> 바로 뒤가 struct 를 닫는 <code>00</code> — 1바이트 태그라 "생략"이든 "명시적 0 값"이든 결과가 0으로 같아 안전 (first_index/last_index/repeat_count 실측)</div>
+        </div>
+      </div>
+
+      <div class="algo">
+        <div class="algo-h"><span class="dot"></span>해결 알고리즘 — 정규식 앵커 룩어헤드<span class="src">dd_main.py</span></div>
+        <pre><span class="cm"># "다음 필드 이름" 패턴을 정규식으로 정의 — 소비 없이 미리보기(lookahead)만 한다</span>
+KEY_ANCHOR = re.compile(rb'<span class="st">\x09([A-Za-z_][A-Za-z0-9_.\-]{0,63})\x00</span>')
+
+<span class="kw">def</span> read_scalar(subtype):
+    <span class="kw">if</span> KEY_ANCHOR.match(raw, i):      <span class="cm"># ① 커서 위치가 곧바로 "09+식별자+00" 이면</span>
+        <span class="kw">return</span> <span class="nm">0</span>                       <span class="cm">#    → payload 생략된 것. 소비 0바이트, 값 0</span>
+    <span class="kw">if</span> size == <span class="nm">1</span> <span class="kw">and</span> raw[i] == <span class="nm">0x00</span>:  <span class="cm"># ② 1바이트 태그 + 바로 END → 마지막 멤버의 0</span>
+        <span class="kw">return</span> <span class="nm">0</span>                       <span class="cm">#    (0x00을 값으로 읽어도 어차피 0이라 안전)</span>
+    v = unpack(fmt, raw[i:i+size]); i += size  <span class="cm"># ③ 아니면 정상 고정폭 소비</span>
+    <span class="kw">return</span> v</pre>
+        <div class="why"><b>왜 이 정규식이 결정적인가:</b> 앵커를 아무 <code>0x09</code> 가 아니라
+        <b>「0x09 + ASCII 식별자(첫 글자 영문/_, 최대 64자) + 0x00」</b> 전체 패턴으로 제한했기 때문입니다.
+        float64 payload 안에 우연히 <code>0x09</code> 바이트가 나와도 뒤가 식별자+NUL 형태가 아니면 매치되지 않아
+        "도미노 오정렬"이 안 생깁니다. ②를 1B 태그로 한정한 이유: enum(2B)/bool·float(4~8B)은 첫 바이트가
+        <code>00</code> 이어도 나머지 바이트에 실값이 있을 수 있어(float 비정규값 등) 잘라먹으면 안 됩니다.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 예외 2 -->
+  <div class="exc">
+    <div class="exc-h"><span class="no">2</span><h3>배열의 0 은 0x02/0x03 마커 — payload 없음</h3></div>
+    <div class="exc-b">
+      <p>배열 안에서 0 은 <b>태그 1바이트만</b> 씁니다. 진짜 int8 값은 <code>0x04</code> 가 싣습니다.</p>
+      <div class="compare">
+        <div class="cmp ng"><span class="tag">❌ 02 를 태그+payload 로 둘씩 짝지음</span>
+          <div class="strip">
+            <div class="grp g-type ctx"><div class="cells"><div class="cell">09</div></div><div class="glabel">Type</div></div>
+            <div class="grp g-name ctx"><div class="cells"><div class="cell wide">"position_nrs"</div><div class="cell">00</div></div><div class="glabel">필드 이름</div></div>
+            <div class="grp g-container ctx"><div class="cells"><div class="cell">0A</div></div><div class="glabel">ARRAY</div></div>
+            <div class="grp g-subtype"><div class="cells"><div class="cell">02</div><div class="cell strike">02</div></div><div class="glabel">"int8=2"?</div></div>
+            <div class="grp g-subtype"><div class="cells"><div class="cell">03</div><div class="cell strike">04</div></div><div class="glabel">"uint8=4"?</div></div>
+            <div class="grp g-value"><div class="cells"><div class="cell strike">02</div><div class="cell ellip">…</div></div><div class="glabel">이후 전부 밀림</div></div>
+            <div class="grp g-end ctx"><div class="cells"><div class="cell strike">00</div></div><div class="glabel">END도 어긋남</div></div>
+          </div>
+          <div class="res">→ <span class="strike">[2, 4, …]</span> 조용히 오답 (짝수 개면 에러도 안 남)</div>
+        </div>
+        <div class="cmp ok"><span class="tag">✓ 02/03 = 0 마커 1바이트, 04 = 값 페어</span>
+          <div class="strip has-hot">
+            <div class="grp g-type ctx"><div class="cells"><div class="cell">09</div></div><div class="glabel">Type</div></div>
+            <div class="grp g-name ctx"><div class="cells"><div class="cell wide">"position_nrs"</div><div class="cell">00</div></div><div class="glabel">필드 이름</div></div>
+            <div class="grp g-container"><div class="cells"><div class="cell">0A</div></div><div class="glabel">ARRAY</div></div>
+            <div class="hot" data-label="0 마커 — 태그 1B만, payload 없음">
+              <div class="grp g-subtype"><div class="cells"><div class="cell">02</div></div><div class="glabel">0</div></div>
+              <div class="grp g-subtype"><div class="cells"><div class="cell">02</div></div><div class="glabel">0</div></div>
+              <div class="grp g-subtype"><div class="cells"><div class="cell">03</div></div><div class="glabel">0</div></div>
+            </div>
+            <div class="grp g-value"><div class="cells"><div class="cell">04</div><div class="cell">02</div></div><div class="glabel">2</div></div>
+            <div class="grp g-value"><div class="cells"><div class="cell">04</div><div class="cell">02</div></div><div class="glabel">2</div></div>
+            <div class="grp g-value"><div class="cells"><div class="cell">04</div><div class="cell">03</div></div><div class="glabel">3</div></div>
+            <div class="grp g-plain"><div class="cells"><div class="cell ellip">…</div></div><div class="glabel" style="--c-fg:var(--ink-soft)">&nbsp;</div></div>
+            <div class="grp g-end"><div class="cells"><div class="cell">00</div></div><div class="glabel">END</div></div>
+            <div class="grp g-type ctx"><div class="cells"><div class="cell">09</div></div><div class="glabel">다음 필드</div></div>
+            <div class="grp g-name ctx"><div class="cells"><div class="cell wide">"next_field"</div><div class="cell">00</div></div><div class="glabel">이름</div></div>
+          </div>
+          <div class="res">→ <b>[0, 0, 0, 2, 2, 3, …]</b> (position_nrs 실측, 단조증가로 검산됨). 배열이 끝나야 END 가 제자리에 맞고 다음 필드로 정확히 이어집니다.</div>
+        </div>
+      </div>
+
+      <div class="algo">
+        <div class="algo-h"><span class="dot"></span>해결 알고리즘 — 코퍼스 통계로 의미 확정 + 마커 분기<span class="src">dd_analyze.py → dd_main.py</span></div>
+        <pre><span class="cm"># 1단계(발견): 배열 모호성이 전혀 없는 "이름 있는 스칼라 필드" 위치만 골라</span>
+<span class="cm">#              605개 파일 전체에서 태그별 값 분포를 측정한다 (dd_analyze.py)</span>
+<span class="cm">#   0x02 → 602/602 전부 0     0x03 → 50/50 전부 0     0x04 → 1087건 전부 비영(33종)</span>
+<span class="cm">#   ⇒ 0x02/0x03 은 "0 표기 전용 마커", 실제 int8 값 캐리어는 0x04 로 확정</span>
+
+<span class="cm"># 2단계(적용): 배열 파서에서 마커를 별도 분기로 — payload 를 아예 읽지 않는다</span>
+<span class="kw">while</span> raw[i] != END:
+    t = raw[i]
+    <span class="kw">if</span> t <span class="kw">in</span> (<span class="nm">0x02</span>, <span class="nm">0x03</span>):   <span class="cm"># 0 마커: 태그 1바이트만 소비</span>
+        i += <span class="nm">1</span>; arr.append(<span class="nm">0</span>)
+    <span class="kw">elif</span> t <span class="kw">in</span> SCALAR_FMT:    <span class="cm"># 그 외 수치: 자기 폭만큼 payload 소비</span>
+        i += <span class="nm">1</span>; arr.append(unpack_at(t, i))</pre>
+        <div class="why"><b>핵심 아이디어:</b> 배열 안에서는 <code>02 02</code> 가 "마커 둘(0,0)"인지 "태그+값(2)"인지
+        그 자리만 봐서는 알 수 없습니다. 그래서 <b>모호성이 없는 위치(이름 필드)에서 통계를 내서</b> 태그의
+        의미를 먼저 확정하고, 그 결론을 배열에 적용했습니다. "0은 항상 0x02/0x03, 실값은 항상 0x04" 라는
+        불변식 덕분에 배열 파싱에서 마커 판정이 아예 필요 없어집니다 — 모호성의 원천 제거.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 예외 3 -->
+  <div class="exc">
+    <div class="exc-h"><span class="no">3</span><h3>배열의 0x09 원소는 두 얼굴 — NUL 직후 바이트로 판별</h3></div>
+    <div class="exc-b">
+      <p>이름 NUL <b>바로 다음 바이트</b>가 컨테이너(<code>0A</code>/<code>0B</code>)면 "이름+컨테이너", 아니면 bare 문자열 값.</p>
+      <div class="compare">
+        <div class="cmp ok"><span class="tag">✓ 형태 A — post-NUL ≠ 컨테이너 → bare 문자열</span>
+          <div class="strip has-hot">
+            <div class="grp g-type ctx"><div class="cells"><div class="cell">09</div></div><div class="glabel">Type</div></div>
+            <div class="grp g-name ctx"><div class="cells"><div class="cell wide">"valid_values"</div><div class="cell">00</div></div><div class="glabel">필드 이름</div></div>
+            <div class="grp g-container"><div class="cells"><div class="cell">0A</div></div><div class="glabel">ARRAY</div></div>
+            <div class="grp g-value"><div class="cells"><div class="cell">09</div><div class="cell wide">"TRUE"</div><div class="cell">00</div></div><div class="glabel">문자열 원소</div></div>
+            <div class="hot" data-label="판별: NUL 직후 1바이트">
+              <div class="grp g-value"><div class="cells"><div class="cell" style="outline:2.5px solid var(--accent);outline-offset:1px">09</div><div class="cell wide">"TRUE"</div><div class="cell">00</div></div><div class="glabel">≠ 0A/0B → bare 문자열</div></div>
+            </div>
+            <div class="grp g-end"><div class="cells"><div class="cell">00</div></div><div class="glabel">END</div></div>
+            <div class="grp g-type ctx"><div class="cells"><div class="cell">09</div></div><div class="glabel">다음 필드</div></div>
+            <div class="grp g-name ctx"><div class="cells"><div class="cell wide">"next_field"</div><div class="cell">00</div></div><div class="glabel">이름</div></div>
+          </div>
+          <div class="res">NUL 뒤가 <code>09</code>(다음 문자열의 시작) → <b>["TRUE", "TRUE"]</b></div>
+        </div>
+        <div class="cmp ok"><span class="tag">✓ 형태 B — post-NUL = 0A/0B → 이름+컨테이너</span>
+          <div class="strip has-hot">
+            <div class="grp g-type ctx"><div class="cells"><div class="cell">09</div></div><div class="glabel">Type</div></div>
+            <div class="grp g-name ctx"><div class="cells"><div class="cell wide">"detector"</div><div class="cell">00</div></div><div class="glabel">필드 이름</div></div>
+            <div class="grp g-container"><div class="cells"><div class="cell">0A</div></div><div class="glabel">ARRAY</div></div>
+            <div class="grp g-name"><div class="cells"><div class="cell">09</div><div class="cell wide">"abc"</div><div class="cell">00</div></div><div class="glabel">원소 이름</div></div>
+            <div class="hot" data-label="판별: NUL 직후 1바이트">
+              <div class="grp g-container"><div class="cells"><div class="cell" style="outline:2.5px solid var(--accent);outline-offset:1px">0B</div></div><div class="glabel">= 0B → 이름+STRUCT</div></div>
+            </div>
+            <div class="grp g-plain"><div class="cells"><div class="cell ellip wide" style="min-width:96px">… struct 멤버들</div></div><div class="glabel" style="--c-fg:var(--ink-soft)">중첩 내용</div></div>
+            <div class="grp g-end"><div class="cells"><div class="cell">00</div></div><div class="glabel">END<span class="sz">struct 닫기</span></div></div>
+            <div class="grp g-end"><div class="cells"><div class="cell">00</div></div><div class="glabel">END<span class="sz">배열 닫기</span></div></div>
+            <div class="grp g-type ctx"><div class="cells"><div class="cell">09</div></div><div class="glabel">다음 필드</div></div>
+            <div class="grp g-name ctx"><div class="cells"><div class="cell wide">"next_field"</div><div class="cell">00</div></div><div class="glabel">이름</div></div>
+          </div>
+          <div class="res">NUL 뒤가 <code>0B</code> → <b>[{"abc": {…}}]</b> (detector 맵 실측). END 가 <b>두 번</b> — 안쪽 struct 닫기, 그다음 배열 닫기.</div>
+        </div>
+        <div class="cmp ng"><span class="tag">❌ 판별 없이 읽으면</span>
+          <div class="res" style="margin-top:0">bare 문자열들을 둘씩 짝지어 <span class="strike"><code>{TRUE: "TRUE"}</code></span> 로 오독 — 짝수 개면 에러 없이 조용히 틀립니다. 테두리 친 <b>post-NUL 1바이트</b>가 두 오독을 모두 차단.</div>
+        </div>
+      </div>
+
+      <div class="algo">
+        <div class="algo-h"><span class="dot"></span>해결 알고리즘 — 1바이트 룩어헤드 판별<span class="src">dd_main.py · _read_array</span></div>
+        <pre><span class="kw">if</span> t == <span class="nm">0x09</span>:                       <span class="cm"># 배열 안 문자열 원소</span>
+    s, i = read_cstr(raw, i+<span class="nm">1</span>)       <span class="cm"># 일단 NUL까지 문자열을 읽고,</span>
+    nxt = raw[i]                     <span class="cm"># NUL "직후 1바이트"만 미리 본다</span>
+    <span class="kw">if</span> nxt <span class="kw">in</span> (<span class="nm">0x0A</span>, <span class="nm">0x0B</span>):         <span class="cm"># 컨테이너가 붙어 있으면</span>
+        arr.append({s: read_value(nxt)})  <span class="cm"># → {이름: struct/array} 원소</span>
+    <span class="kw">else</span>:                            <span class="cm"># 아니면</span>
+        arr.append(s)                <span class="cm"># → bare 문자열 값</span></pre>
+        <div class="why"><b>왜 1바이트만 봐도 결정적인가 (귀류법):</b>
+        (a) 이름있는 원소를 bare 문자열로 잘못 읽으면 → 바로 뒤의 <code>0A/0B</code> 가 "문자열 배열 속 컨테이너"가
+        되어 범주 위반으로 즉시 모순. (b) 반대로 bare 문자열들을 이름 원소로 잘못 읽으면 → 문자열 뒤에 컨테이너가
+        없으므로 이 역시 성립 불가. 즉 <b>두 해석이 동시에 정합할 수 있는 바이트열이 존재하지 않아</b>,
+        post-NUL 1바이트 검사가 완전한 판별자가 됩니다.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 예외 4 -->
+  <div class="exc">
+    <div class="exc-h"><span class="no">4</span><h3>수치 배열의 타입 승격 — 폭이 배열 중간에 바뀐다</h3></div>
+    <div class="exc-b">
+      <p>값이 int8 범위(≤127)를 넘으면 같은 배열 안에서 enum(2B)으로 승격됩니다. <b>원소마다 자기 태그가 폭을 정하므로</b> 섞여도 파싱은 결정적입니다.</p>
+      <div class="compare">
+        <div class="cmp ok"><span class="tag">✓ ratios 실측 (+5 등차수열)</span>
+          <div class="strip has-hot">
+            <div class="grp g-type ctx"><div class="cells"><div class="cell">09</div></div><div class="glabel">Type</div></div>
+            <div class="grp g-name ctx"><div class="cells"><div class="cell wide">"ratios"</div><div class="cell">00</div></div><div class="glabel">필드 이름</div></div>
+            <div class="grp g-container"><div class="cells"><div class="cell">0A</div></div><div class="glabel">ARRAY</div></div>
+            <div class="grp g-value"><div class="cells"><div class="cell">04</div><div class="cell">22</div></div><div class="glabel">34 · 1B</div></div>
+            <div class="grp g-value"><div class="cells"><div class="cell">04</div><div class="cell">27</div></div><div class="glabel">39 · 1B</div></div>
+            <div class="grp g-plain"><div class="cells"><div class="cell ellip">…</div></div><div class="glabel" style="--c-fg:var(--ink-soft)">&nbsp;</div></div>
+            <div class="hot" data-label="폭 전환 지점 — int8 → enum 승격">
+              <div class="grp g-value"><div class="cells"><div class="cell">04</div><div class="cell">7C</div></div><div class="glabel">124 · 1B</div></div>
+              <div class="grp g-subtype"><div class="cells"><div class="cell">05</div><div class="cell">00</div><div class="cell">81</div></div><div class="glabel">129 · 2B</div></div>
+            </div>
+            <div class="grp g-subtype"><div class="cells"><div class="cell">05</div><div class="cell">00</div><div class="cell">86</div></div><div class="glabel">134 · 2B</div></div>
+            <div class="grp g-plain"><div class="cells"><div class="cell ellip">…</div></div><div class="glabel" style="--c-fg:var(--ink-soft)">&nbsp;</div></div>
+            <div class="grp g-end"><div class="cells"><div class="cell">00</div></div><div class="glabel">END</div></div>
+            <div class="grp g-type ctx"><div class="cells"><div class="cell">09</div></div><div class="glabel">다음 필드</div></div>
+            <div class="grp g-name ctx"><div class="cells"><div class="cell wide">"next_field"</div><div class="cell">00</div></div><div class="glabel">이름</div></div>
+          </div>
+          <div class="res">127 을 넘는 <b>128부터 <code>05</code>(enum, 2B)</b> 로 — 값은 그냥 이어짐: [34, 39, …, 124, <b>129, 134</b>, …]</div>
+        </div>
+        <div class="cmp ng"><span class="tag">❌ "배열은 한 타입" 이라고 가정하면</span>
+          <div class="res" style="margin-top:0"><code>05 00 81</code> 을 int8 셋으로 읽어 <span class="strike">[5, 0, 129]</span> 처럼 어긋납니다. 배열은 <b>엄격 동질이 아니라 범주 동질</b> — 수치(0x04~0x08)끼리는 폭이 달라도 섞일 수 있습니다. 단 수치↔문자열↔컨테이너 교차는 없음 → 나오면 디싱크 신호.</div>
+        </div>
+      </div>
+
+      <div class="algo">
+        <div class="algo-h"><span class="dot"></span>해결 알고리즘 — 원소별 자기 태그가 폭을 결정 + 범주 불변식 검사<span class="src">dd_main.py</span></div>
+        <pre><span class="cm"># 폭 테이블: 태그 → (포맷, 바이트수). 배열 차원의 "공통 폭" 개념을 아예 버린다</span>
+SCALAR_FMT = { <span class="nm">0x04</span>: (<span class="st">'&gt;b'</span>, <span class="nm">1</span>), <span class="nm">0x05</span>: (<span class="st">'&gt;h'</span>, <span class="nm">2</span>), <span class="nm">0x06</span>: (<span class="st">'&gt;i'</span>, <span class="nm">4</span>), <span class="nm">0x08</span>: (<span class="st">'&gt;d'</span>, <span class="nm">8</span>), … }
+
+<span class="kw">while</span> raw[i] != END:
+    t = raw[i]; i += <span class="nm">1</span>
+    fmt, size = SCALAR_FMT[t]        <span class="cm"># 원소마다 "자기 태그"로 폭을 새로 결정</span>
+    arr.append(unpack(fmt, raw[i:i+size])); i += size
+
+    <span class="cm"># 범주 불변식: 첫 원소의 범주(수치/문자열/컨테이너)를 dom 에 기록,</span>
+    <span class="cm"># 이후 원소가 범주를 벗어나면 → 값이 아니라 파싱 디싱크로 판정</span>
+    dom = dom <span class="kw">or</span> category(t)
+    <span class="kw">assert</span> category(t) == dom</pre>
+        <div class="why"><b>핵심 아이디어:</b> "배열 = 한 타입" 가정을 버리고 <b>폭 결정을 원소 단위로 국소화</b>하면,
+        int8→enum 승격이 배열 중간에 일어나도 각 원소가 자기 폭만큼만 정확히 소비하므로 파싱이 결정적입니다.
+        대신 실코퍼스에서 관측된 더 약한 불변식(<b>범주 동질성</b>)을 검사로 남겨서, 진짜 어긋남(수치 배열에
+        문자열/컨테이너 태그 등장)은 놓치지 않고 잡아냅니다.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 7. 전체 검증 -->
+<section>
+  <div class="sec-head"><span class="sec-num">07</span><h2>이 규칙들이 맞다는 건 어떻게 증명했나</h2></div>
+  <p class="sub">위 네 해법은 각각의 지점을 고치지만, "규칙 전체가 파일 전체를 유일하게 설명하는가"는 별도 알고리즘으로 검증했습니다.</p>
+
+  <div class="algo" style="margin-top:0">
+    <div class="algo-h"><span class="dot"></span>백트래킹 전수 탐색 — 해가 정확히 1개인지 센다<span class="src">dd_strict.py</span></div>
+    <pre><span class="cm"># 모호할 수 있는 지점(0값 생략 여부, 배열 원소 해석 등)마다 후보를 전부 분기,</span>
+<span class="cm"># "파일 경계(n-4)에서 정확히 끝나는" 파스 트리만 해(解)로 인정한다</span>
+solutions = enumerate_all_parses(raw[<span class="nm">4</span>:-<span class="nm">4</span>])   <span class="cm"># 명시적 스택 백트래킹</span>
+
+<span class="kw">if</span> len(solutions) == <span class="nm">1</span>:  status = <span class="st">'unique'</span>     <span class="cm"># 유일해 — 규칙이 충분함 ✓</span>
+<span class="kw">elif</span> len(solutions) == <span class="nm">0</span>: status = <span class="st">'failed'</span>    <span class="cm"># 구조 오류 — 실패 지점 hexdump 진단</span>
+<span class="kw">else</span>:                    status = <span class="st">'ambiguous'</span>  <span class="cm"># 모호 — 두 해가 갈라지는 첫 지점 diff 출력</span></pre>
+    <div class="why"><b>결과:</b> 실코퍼스 605개 전부 <b>unique(유일해)</b> — 모호 0건, 오류 0건.
+    즉 위 규칙 집합은 코퍼스의 모든 바이트를 <b>단 한 가지 방법으로만</b> 설명합니다. 휴리스틱 단일-pass 파서
+    (<code>dd_main.py</code>)와 결과도 100% 일치. 규칙이 하나라도 틀리면(예: 0x02 가 비영값을 싣는 반례 등장)
+    이 검증기가 즉시 '모호' 또는 '불일치'로 잡아냅니다.</div>
+  </div>
+</section>
+
+<!-- 8. 근본 해법 -->
+<section>
+  <div class="sec-head"><span class="sec-num">08</span><h2>근본 해법 — 예외 4개는 공리 2개였다</h2></div>
+  <p class="sub">예외들은 하드코딩이 아니라 <b>잘못된 렌즈의 그림자</b>였습니다. "태그마다 폭이 고정이고 필드는
+  스키마 타입을 쓴다"고 보면 예외 4개가 필요하지만, 렌즈를 바꾸면 전부 사라집니다.
+  (<code>dd_unified.py</code> 로 구현, <code>dd_prove.py</code> 로 실행 증명)</p>
+
+  <div class="grid2">
+    <div class="card">
+      <h3 style="margin-top:0"><span style="color:var(--accent-ink)">공리 A1</span> — 값이 태그를 고른다 (최소 폭 인코딩)</h3>
+      <p style="margin-bottom:0">수치 태그는 타입이 아니라 <b>폭 사다리</b>다:
+      <code>0x02/0x03</code>=0B(값 0) → <code>0x04</code>=1B → <code>0x05</code>=2B(int16) →
+      <code>0x06</code>=4B(int32) → <code>0x08</code>=8B. 인코더는 값이 들어가는 최소 폭을 고른다.
+      "ENUM"·"BOOL" 이라는 이름은 유물 — <code>logical_scan_id</code>=129366 이 "BOOL"일 리 없다.</p>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0"><span style="color:var(--accent-ink)">공리 A2</span> — 원소 문법</h3>
+      <p style="margin-bottom:0"><code>element := named_container | bare_value</code>.
+      배열 원소 <code>0x09</code> 는 NUL 직후 1바이트가 <code>0A/0B</code> 면 이름+컨테이너.
+      post-NUL 판별(예외 ③)은 이 문법의 <b>LL(1) 룩어헤드</b>일 뿐이다.</p>
+    </div>
+  </div>
+
+  <div class="strip-card" style="margin-top:16px">
+    <div class="strip-title">같은 필드 <code>count</code> — <b>값만 바꾸면 태그가 바뀐다</b> (공리 A1 의 생성 모델)</div>
+    <div class="strip">
+      <div class="grp g-name ctx"><div class="cells"><div class="cell">09</div><div class="cell wide">"count"</div><div class="cell">00</div></div><div class="glabel">이름</div></div>
+      <div class="grp g-subtype"><div class="cells"><div class="cell">02</div></div><div class="glabel">= 0<span class="sz">폭 0</span></div></div>
+    </div>
+    <div class="strip">
+      <div class="grp g-name ctx"><div class="cells"><div class="cell">09</div><div class="cell wide">"count"</div><div class="cell">00</div></div><div class="glabel">이름</div></div>
+      <div class="grp g-value"><div class="cells"><div class="cell">04</div><div class="cell">05</div></div><div class="glabel">= 5<span class="sz">1B</span></div></div>
+    </div>
+    <div class="strip">
+      <div class="grp g-name ctx"><div class="cells"><div class="cell">09</div><div class="cell wide">"count"</div><div class="cell">00</div></div><div class="glabel">이름</div></div>
+      <div class="grp g-value"><div class="cells"><div class="cell">05</div><div class="cell">01</div><div class="cell">2C</div></div><div class="glabel">= 300<span class="sz">2B</span></div></div>
+    </div>
+    <div class="strip">
+      <div class="grp g-name ctx"><div class="cells"><div class="cell">09</div><div class="cell wide">"count"</div><div class="cell">00</div></div><div class="glabel">이름</div></div>
+      <div class="grp g-value"><div class="cells"><div class="cell">06</div><div class="cell">00</div><div class="cell">01</div><div class="cell">F9</div><div class="cell">56</div></div><div class="glabel">= 129366<span class="sz">4B</span></div></div>
+    </div>
+    <p class="note">이 렌즈로 보면 — 예외 ② "배열 0 마커"는 폭 테이블의 한 항목(width=0), 예외 ④ "승격"은
+    최소 폭 선택의 자연스러운 결과, 예외 ① "0값 생략"은 "0 은 0바이트" 원칙의 이름-필드 발현.
+    문서화된 측정치에서 연역까지 됩니다: <code>0x04</code> 이름 필드 1087/1087 이 전부 비영이므로,
+    END-직전 생략 사례(first_index 등)의 태그는 애초에 폭0 태그(02/03)였습니다 — <b>"생략"이란 현상 자체가
+    대부분 폭0 의 다른 이름</b>이었던 것.</p>
+  </div>
+
+  <h3>실행 증명 (dd_prove.py) + 적대 검증 (에이전트 4·반박 시도)</h3>
+  <div class="tblwrap">
+    <table>
+      <thead><tr><th>검증</th><th>결과</th></tr></thead>
+      <tbody>
+        <tr><td>selftest — 스펙 실측 패턴 전종 (예제·마커런·승격·이형·짝수함정·END직전·A1확정·유령분기)</td><td><b style="color:var(--good)">15/15 ✓</b></td></tr>
+        <tr><td>차분: dd_main ↔ 공리 파서, 생성 코퍼스 3,000+8,000파일 (시드 6종)</td><td><b style="color:var(--good)">불일치 0 ✓</b></td></tr>
+        <tr><td>dd_strict 오라클 — <b>pure 이미지</b>(공리 인코딩) 550파일</td><td><b style="color:var(--good)">550/550 유일해 ✓</b></td></tr>
+        <tr><td>dd_strict 오라클 — wide 생략 포함 이미지 550파일</td><td><b style="color:var(--warn)">538 유일 · 12 모호</b> — 헷지의 취약성 실증</td></tr>
+        <tr><td>변형 퍼즈 — pure 룰에서 모호 발생 (총 3,431개 변형 파일)</td><td><b style="color:var(--good)">0건 ✓</b> (분기가 없어 구성적으로 ≤1해)</td></tr>
+        <tr><td>열거기 ↔ dd_strict 엄격-pass 모호성 판정 정합 (수정 후)</td><td><b style="color:var(--good)">698/698 ✓</b></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="card" style="margin-top:14px">
+    <h3 style="margin-top:0">적대 검증에서 실제로 깨진 것과 살아남은 것</h3>
+    <p>독립 에이전트 4개가 반박을 시도했고, <b>2건이 정당하게 깨져서 수정</b>됐습니다:</p>
+    <p><b>깨짐 ①</b> — "동치는 규칙이 허용하는 인코딩 전체에서 성립" 은 과대주장.
+    스펙 표는 0x02/0x03 을 "0~1B"로 <b>헷지</b>해 두었기에, 규칙상 가능하지만 인코더가 절대 안 만드는
+    <code>02 05</code>(0x02+비영 payload) 같은 바이트에서 dd_main({a:5})과 공리 파서({a:0})가 갈립니다.
+    더 중요한 발견: <b>이 파일을 dd_strict 는 경고 없이 '유일해'로 통과</b>시킵니다 — 스펙 §4 의
+    "반례가 나타나면 즉시 검출" 주장에 구멍. → 공리 파서에 <code>anomalies</code> 검출을 추가해
+    실질 트립와이어로 만들었습니다 (동치 주장은 "인코더 이미지 위에서"로 정정).</p>
+    <p><b>깨짐 ②</b> — 초기 열거기에 dd_strict 에 실재하지 않는 "배열 1B 생략" 유령 분기가 있어
+    유효 파일 698개 중 59개의 모호성을 과대집계했습니다 (dd_strict 의 해당 코드는 호출되지 않는
+    죽은 코드임을 에이전트가 규명). → 제거 + dom 동질성 모델링 추가 → 판정 정합 698/698.</p>
+    <p style="margin-bottom:0"><b>살아남음</b> — P2(pure 룰 해 ≤1)는 3,431개 변형 퍼즈와 코드 검토
+    모두에서 생존: pure 문법은 모든 위치에서 대안이 최대 1개라 <b>구성적으로 무모호</b>합니다.
+    공리 감사(V3)도 연역의 뼈대를 건전 판정 — 단 아래 '남은 미결'이 정밀해졌습니다.</p>
+  </div>
+
+  <h3>그래도 남는 한계 — 그리고 그게 왜 "정답"인가</h3>
+  <p class="sub" style="margin-bottom:14px">스펙의 관용 규칙(wide 생략 허용)을 유지하는 한, <b>원리적으로 못 가르는 파일</b>이 존재함을
+  반례로 구성했습니다. 같은 바이트에 두 인코딩이 겹치는 파일입니다:</p>
+
+  <div class="exc" style="margin-top:0">
+    <div class="exc-h"><span class="no">A</span><h3>반례 — float payload 가 우연히 "제로 필드 둘"의 인코딩과 일치</h3></div>
+    <div class="exc-b">
+      <div class="compare">
+        <div class="cmp ok"><span class="tag">해석 1 — payload 로 읽음</span>
+          <div class="strip">
+            <div class="grp g-magic ctx"><div class="cells"><div class="cell wide">17 FA AE 4E</div></div><div class="glabel">MAGIC</div></div>
+            <div class="grp g-container ctx"><div class="cells"><div class="cell">0B</div></div><div class="glabel">열기</div></div>
+            <div class="grp g-name"><div class="cells"><div class="cell">09</div><div class="cell">a</div><div class="cell">00</div></div><div class="glabel">필드 a</div></div>
+            <div class="grp g-subtype"><div class="cells"><div class="cell">08</div></div><div class="glabel">f64</div></div>
+            <div class="grp g-value"><div class="cells"><div class="cell">09</div><div class="cell">62</div><div class="cell">00</div><div class="cell">02</div><div class="cell">09</div><div class="cell">63</div><div class="cell">00</div><div class="cell">02</div></div><div class="glabel">payload 8B</div></div>
+            <div class="grp g-end"><div class="cells"><div class="cell">00</div></div><div class="glabel">END</div></div>
+          </div>
+          <div class="res">→ <code>{a: 1.79e-263}</code> — 경계 정합 ✓ 체크섬 ✓</div>
+        </div>
+        <div class="cmp ok"><span class="tag">해석 2 — 같은 바이트를 생략+필드들로 읽음</span>
+          <div class="strip">
+            <div class="grp g-magic ctx"><div class="cells"><div class="cell wide">17 FA AE 4E</div></div><div class="glabel">MAGIC</div></div>
+            <div class="grp g-container ctx"><div class="cells"><div class="cell">0B</div></div><div class="glabel">열기</div></div>
+            <div class="grp g-name"><div class="cells"><div class="cell">09</div><div class="cell">a</div><div class="cell">00</div></div><div class="glabel">필드 a</div></div>
+            <div class="grp g-subtype"><div class="cells"><div class="cell">08</div></div><div class="glabel">f64=0 생략</div></div>
+            <div class="grp g-name"><div class="cells"><div class="cell">09</div><div class="cell">62</div><div class="cell">00</div></div><div class="glabel">필드 b</div></div>
+            <div class="grp g-subtype"><div class="cells"><div class="cell">02</div></div><div class="glabel">= 0</div></div>
+            <div class="grp g-name"><div class="cells"><div class="cell">09</div><div class="cell">63</div><div class="cell">00</div></div><div class="glabel">필드 c</div></div>
+            <div class="grp g-subtype"><div class="cells"><div class="cell">02</div></div><div class="glabel">= 0</div></div>
+            <div class="grp g-end"><div class="cells"><div class="cell">00</div></div><div class="glabel">END</div></div>
+          </div>
+          <div class="res">→ <code>{a:0, b:0, c:0}</code> — 경계 정합 ✓ 체크섬 ✓ (같은 바이트!)</div>
+        </div>
+      </div>
+      <div class="algo">
+        <div class="algo-h"><span class="dot"></span>룰셋별 해 개수 — 모호성의 원천을 정확히 특정<span class="src">dd_prove.py ambig · dd_strict 실판정</span></div>
+        <pre>  반례                              spec룰(현행)  wide생략 제거   pure(공리 A1)   dd_strict
+  A. wide 생략 헷지                      2해           1해            1해         ambiguous
+  B. 폭1 explicit-payload 헷지            2해           2해         0해(거부)      ambiguous</pre>
+        <div class="why"><b>읽는 법:</b> 두 해석은 <b>같은 바이트</b>이므로 어떤 알고리즘이든 원리적으로
+        못 가릅니다 (인코딩 함수가 비단사인 지점). "dd_strict 엄격-pass 문법 안에서 모호성의 원천은
+        정확히 <b>이름 필드의</b> 두 헷지" 가 정밀한 표현입니다 (엄격 pass 실패 시 도는 loose fallback 은
+        혼합 배열 등 문법 밖 입력에서 별도 모호 클래스를 가짐 — 적대 검증 발견). 근본 해결이란 규칙을
+        더 쌓는 게 아니라 — ① 공리를 최소로 압축하고(pure 룰은 반례 A 를 1해로, B 를 "인코딩 불가
+        바이트"로 만든다), ② 남는 병리 입력은 전역 오라클(<code>dd_strict</code> 경계 정합·유일해
+        검사)과 <code>anomalies</code> 검출로 <b>잡아내는</b> 것. 지금 저장소가 이미 그 아키텍처이고,
+        이번 작업은 공리 압축분(<code>dd_unified.py</code>)을 보탠 것입니다.</div>
+      </div>
+
+      <h3 style="margin-top:22px">"뒤에서 읽으면 되지 않나?" — 역방향 파싱의 판정</h3>
+      <p style="margin:0 0 10px;font-size:14.5px;color:var(--ink-soft)">역방향 전수 열거기를 구현해 실측한 결과입니다
+      (생성 파일 480개 + 반례 2종):</p>
+      <div class="tblwrap">
+        <table>
+          <thead><tr><th>질문</th><th>실측 판정</th></tr></thead>
+          <tbody>
+            <tr><td>역방향이 END(00) 를 짝지을 수 있나?</td><td><b style="color:var(--bad)">불가</b> — 0x00 은 4역할(END·이름NUL·문자열NUL·payload). 스펙 예제 본문의 0x00 14개 중 END 는 2개뿐. 태그가 payload <b>앞</b>에 오는 접두 코드라 역방향은 폭을 모른 채 백트래킹 필수</td></tr>
+            <tr><td>반례 A/B 를 가를 수 있나?</td><td><b style="color:var(--bad)">불가</b> — 순·역방향 해집합이 정확히 동일 (같은 바이트에 두 인코딩이 겹치므로 방향은 정보를 추가하지 못함)</td></tr>
+            <tr><td>비용은?</td><td>탐색 노드 <b>18~66배</b> 증가, pure 문법의 순방향 결정성마저 상실 (꼬리 <code>04 03</code> 부터 2후보)</td></tr>
+            <tr><td>쓸모가 있는 곳은?</td><td><b style="color:var(--good)">있음</b> — 앵커 없는 고정폭 수치 배열의 <b>중간 손상 시 꼬리 복구</b>: 순방향은 쓰레기 3토큰 후 우연 재동기, 역방향 스캔은 12원소 중 꼬리 8개를 결정적으로 복구. salvage 전용 보조 도구로는 가치 있음</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="verified" style="margin:16px 0 0">✓ 측정 완료 (dd_prove.py measure, 실코퍼스 1255개): walk 실패 0 · 카운터 [1]~[5] 전부 0 → 코퍼스 전부 pure 이미지 안</div>
+      <p style="margin:12px 0 0;font-size:14px;color:var(--ink-soft)"><b>확정:</b> 실데이터 1255개가 전부 pure 문법으로
+      경계까지 완주하고, wide 생략·폭1 생략·<code>04 00</code>·폭0 비정상이 <b>0건</b>. 즉 예외 4가지와 생략
+      룩어헤드는 <b>실제로 하나도 필요 없으며</b>, 공리 A1·A2 두 줄로 코퍼스 전 바이트가 <b>해 유일하게</b>
+      디코딩됩니다. <b>남은 미결은 인코딩 구조가 아니라 값 의미뿐:</b> 0x05/0x06 의 부호(int16 vs uint16 —
+      음수·경계값 미관측)와 0x01 의 정체. 이건 measure 로는 판별 불가(직교)라 해당 값이 든 새 덤프가 필요합니다.</p>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="wrap">
+  <p>출처: <code>DD_FORMAT_SPEC.md</code> §1 · 실코퍼스 605/605 검증 · 칸 하나 = 바이트 하나</p>
+</footer>
+
+<script>
+(function(){
+  var root=document.documentElement, tb=document.getElementById('themeToggle');
+  tb.addEventListener('click',function(){
+    var cur=root.getAttribute('data-theme');
+    if(!cur){ cur=matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'; }
+    root.setAttribute('data-theme', cur==='dark'?'light':'dark');
+  });
+})();
+</script>

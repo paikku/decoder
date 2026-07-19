@@ -90,6 +90,7 @@ class TLVParser:
         self.i = 0
         self.n = len(raw)
         self.unknown = []          # (tag, offset) 미지 타입
+        self.anomalies = []        # (offset, kind, detail) 디싱크 신호 (진단용, 파싱 동작엔 영향 없음)
         # 파일 끝 4바이트 트레일러(체크섬) 제외
         self.end = self.n - 4 if self.n > 4 else self.n
         self.trailer = raw[self.end:] if self.end < self.n else b''
@@ -142,15 +143,20 @@ class TLVParser:
                 return 0
             # 같은 생략이 필드가 컨테이너의 '마지막' 멤버일 때도 일어난다 —
             # 이때는 다음에 형제 필드 앵커가 아니라 그 컨테이너를 닫는
-            # END(0x00) 가 곧바로 온다. size==1 태그(int8_a/b/c, uint8)에
-            # 한해서만 안전하게 이 검사를 적용한다: 1바이트 값의 유효 범위가
-            # 정확히 이 한 바이트뿐이라 "생략"과 "명시적 값 0x00 뒤 END"를
-            # 구분할 방법이 없고, 위 KEY_ANCHOR 케이스와 마찬가지로 항상
-            # 0으로 해석해도 값을 잘못 삼킬 여지가 없다. enum/bool/float 처럼
-            # 폭이 2바이트 이상인 타입은 첫 바이트가 0x00 이어도 나머지
-            # 바이트에 실제 값이 있을 수 있어(예: float 비정규값) 이 검사를
-            # 적용하면 진짜 값을 잘라먹을 위험이 있으므로 제외한다.
-            if size == 1 and self.i < self.end and raw[self.i] == TAG_END:
+            # END(0x00) 가 곧바로 온다. **0 표기 전용 태그(0x01/0x02/0x03)에
+            # 한해서만** 이 검사를 적용한다.
+            #   ⚠ 2026-07 정정: 예전엔 size==1 전부(0x04 포함)에 적용했는데,
+            #   그건 잠복 버그였다. 0x04(int8_c)는 실제 int8 '값 캐리어'이고
+            #   측정상 이름 필드 1087/1087 이 전부 비영이다(0 은 0x02/0x03 로
+            #   기록됨). 따라서 0x04 가 0값으로 생략될 일은 없다. 그런데도
+            #   0x04 를 이 검사에 포함하면 '명시적 04 00'(int8 값 0) 뒤에
+            #   형제 필드가 오는 입력에서 0x00 을 END 로 오인해 컨테이너를
+            #   조기 폐쇄하고 뒤 필드를 통째로 잃는다(경계 미도달·무증상).
+            #   0x04 를 빼면 이 입력이 {a:0, b:7} 로 올바로 읽히고 경계까지
+            #   소비된다. 실코퍼스 동작은 불변(0x04 END-직전 0값이 애초에 없음).
+            #   enum/bool/float(폭 2B+)은 선두 0x00 이 실값일 수 있어 원래 제외.
+            if (subtype in (TAG_INT8_A, TAG_INT8_B, TAG_UINT8)
+                    and self.i < self.end and raw[self.i] == TAG_END):
                 return 0
             if self.i + size <= self.n:
                 v = struct.unpack(f, raw[self.i:self.i + size])[0]
@@ -199,7 +205,9 @@ class TLVParser:
         """
         arr = []
         dom = None                # 배열 지배 태그 (§1.6 동질성 규칙)
+        cats = []                 # (offset, category) — 진단용 카테고리 교차 관측
         while self.i < self.end:
+            elem_off = self.i     # 이 원소의 시작 오프셋 (진단용)
             t = self.raw[self.i]
             if t == TAG_END:
                 self.i += 1
@@ -215,9 +223,11 @@ class TLVParser:
                     self.i += 1
                     arr.append({s: self._read_value(nxt)})
                     dom = dom or 'NAMED'
+                    cats.append((elem_off, 'container'))
                 else:
                     arr.append(s)
                     dom = dom or TAG_STRING
+                    cats.append((elem_off, 'string'))
                 continue
             # 0x02/0x03 은 배열의 payload 없는 0 마커 (측정 확정, §1.6): 이름
             # 필드에서 0x02 는 602/602, 0x03 은 50/50 이 값 0. 진짜 int8 값은
@@ -225,6 +235,7 @@ class TLVParser:
             if t in (TAG_INT8_B, TAG_UINT8):
                 self.i += 1
                 arr.append(0)
+                cats.append((elem_off, 'numeric'))
                 continue
             # 그 외 스칼라 + 값. 0 은 0x02 로 기록되므로 여기선 마커 판정 불필요,
             # 고정폭 payload 만 읽는다.
@@ -238,6 +249,7 @@ class TLVParser:
                 else:
                     self.i = self.n
                     arr.append(None)
+                cats.append((elem_off, 'numeric'))
                 continue
             if t == TAG_BOOL:
                 if self.i + 4 <= self.n:
@@ -247,9 +259,23 @@ class TLVParser:
                 else:
                     self.i = self.n
                     arr.append(None)
+                cats.append((elem_off, 'numeric'))
                 continue
             arr.append(self._read_value(t))
             dom = dom or t
+            cats.append((elem_off, 'container' if t in (TAG_ARRAY, TAG_STRUCT) else None))
+        # 카테고리 교차 관측(§1.5-3): 실배열은 수치↔문자열↔컨테이너를 섞지
+        # 않는다. 확립된 카테고리와 다른 원소가 나오면 앞에서 폭/경계를 잘못
+        # 읽어 정렬이 어긋난 강한 디싱크 신호 → anomalies 에 첫 교차만 기록.
+        est = None
+        for off, c in cats:
+            if c is None:
+                continue
+            if est is None:
+                est = c
+            elif c != est:
+                self.anomalies.append((off, 'array_category_cross', f'{est}→{c}'))
+                break
         return arr
 
 
@@ -436,7 +462,14 @@ def _count_leaves(tree):
 def parse_bytes(raw, name=''):
     """단일 .dd 바이트를 스펙 기반 재귀 TLV 로 파싱해 dict 반환"""
     from collections import Counter
-    tree, unknown, trailer = parse_tlv(raw)
+    # parse_tlv 대신 파서를 직접 들어 최종 커서 위치(경계 도달 여부)를 읽는다.
+    p = TLVParser(raw)
+    tree = p.parse()
+    unknown, trailer = p.unknown, p.trailer
+    # 경계(n-4) 미도달 = 파싱이 도중에 멈췄다는 신호. 단일 pass 휴리스틱은
+    # 예전엔 이를 조용히 흘려 뒤 필드를 잃어도 티가 안 났다(예: 명시적
+    # '04 00'). 남은 바이트 수를 리포트해 무증상 절단을 드러낸다.
+    trailing = max(0, p.end - p.i) if raw[:4] == MAGIC else 0
 
     unk_tags = Counter(t for t, _ in unknown)
     samples = []
@@ -455,6 +488,8 @@ def parse_bytes(raw, name=''):
         'field_count': _count_leaves(tree),
         'trailer': trailer.hex(' ') if trailer else '',
         'trailer_ok': dd_trailer_ok(raw) if raw[:4] == MAGIC else None,
+        'boundary_ok': trailing == 0,
+        'trailing_bytes': trailing,
         'unknown_tags': {f'0x{k:02x}': v for k, v in unk_tags.items()},
         'unknown_samples': samples,
     }
@@ -501,10 +536,17 @@ def print_result(res, preview=40):
     if res.get('trailer'):
         mark = {True: '✓ 체크섬 일치', False: '✗ 체크섬 불일치!', None: ''}[res.get('trailer_ok')]
         print(f"    // trailer(h=h*17+b): {res['trailer']}  {mark}")
+    if res.get('trailing_bytes'):
+        print(f"    ⚠ 경계 미도달: 파싱이 {res['trailing_bytes']}B 를 남기고 멈춤 "
+              f"(무증상 절단 가능)")
     if res['unknown_tags']:
         print(f"    ⚠ 미지 태그: {res['unknown_tags']}")
         for s in res.get('unknown_samples', [])[:3]:
             print(f"       - 0x{s['tag']:02x} @off {s['offset']}  ctx: {s['context_hex']}")
+    # 문제 신호가 하나라도 있으면 진단 모드로 파고들도록 안내
+    if (res.get('trailer_ok') is False or res.get('trailing_bytes')
+            or res['unknown_tags']):
+        print("    → `--diagnose` 로 첫 파손 지점·원인·주변 hexdump 를 확인하세요.")
 
 
 def find_tdf_files(path):
@@ -634,6 +676,305 @@ def print_discovery_report(report):
             print(f"    ctx: {hx}")
 
 
+def detect_format(raw):
+    """`.dd` 형식 자동 감지 (스펙 §3). 반환: 'binary' | 'text'.
+
+    1. 앞 4바이트가 매직(17 FA AE 4E) → binary
+    2. NUL 바이트가 있고 출력가능문자 비율 < 85% → binary (매직 없는 변형 대비)
+    3. 그 외 → text
+    """
+    if raw[:4] == MAGIC:
+        return 'binary'
+    if not raw:
+        return 'text'
+    if 0 in raw:
+        printable = sum(1 for b in raw if 0x20 <= b <= 0x7e or b in (9, 10, 13))
+        if printable / len(raw) < 0.85:
+            return 'binary'
+    return 'text'
+
+
+# ---------------------------------------------------------------------------
+# 진단 : 파싱이 실패했거나 결과가 이상할 때 '어디서·왜' 깨졌는지 탐색
+#   dd_strict.py(제거됨) 의 '실패 진단' 절반을 운영 파서에 내재화한 것.
+#   ① 첫 파손 지점 위치 → ② 주변 hexdump → ③ 원인(스펙 §1.5 의 4 디싱크 신호)
+#   → ④ 그 지점 바이트를 여러 타입으로 해석.
+# ---------------------------------------------------------------------------
+
+def hexdump(raw, center, before=32, after=32, width=16):
+    """center 오프셋 주변을 '오프셋 + hex + ASCII' 로 덤프.
+
+    center 바이트는 hex 앞에 '>' 마커를, 그 줄은 끝에 '<<<' 를 붙여 표시한다.
+    """
+    n = len(raw)
+    if n == 0:
+        return '  (빈 바이트)'
+    center = max(0, min(center, n - 1))
+    start = max(0, center - before)
+    start -= start % width                      # 줄 경계 정렬
+    end = min(n, center + after + 1)
+    lines = []
+    for base in range(start, end, width):
+        chunk = raw[base:base + width]
+        cells = []
+        for k, b in enumerate(chunk):
+            mark = '>' if base + k == center else ' '
+            cells.append(f'{mark}{b:02x}')
+        hexcol = ''.join(cells).ljust(width * 3)
+        asc = ''.join(chr(b) if 0x20 <= b <= 0x7e else '.' for b in chunk)
+        ptr = '  <<<' if base <= center < base + width else ''
+        lines.append(f'  {base:08x}  {hexcol} |{asc}|{ptr}')
+    return '\n'.join(lines)
+
+
+def _tri(v):
+    """세값 논리(True/False/None) → 표시 문자열"""
+    return {True: 'OK', False: 'X', None: '-'}[v]
+
+
+def _explain_symptom(raw, symptom, detail, center, end):
+    """증상(symptom)을 스펙 §1.5 의 4 디싱크 신호에 매핑 → (원인, 제안)."""
+    if symptom == 'boundary_miss':
+        prev = raw[center - 1] if center > 0 else None
+        hint = ''
+        if prev == TAG_END:
+            hint = (" 중단 직전 바이트가 0x00(END)입니다 — 스칼라 0값(예: '04 00')을 "
+                    "END 로 오독해 컨테이너를 조기 폐쇄했을 가능성이 큽니다(§1.5-1).")
+        return (
+            f"경계 미도달: 파싱이 오프셋 0x{center:x} 에서 멈췄고 경계(0x{end:x})까지 "
+            f"{end - center}B 가 남았습니다. 구조 해석이 도중에 어긋나 컨테이너가 조기 "
+            f"폐쇄됐거나 필드 폭을 잘못 소비했다는 신호입니다." + hint,
+            "중단점 직전 필드부터 hex 를 되짚어 어떤 필드에서 폭이 어긋났는지 확인하세요. "
+            "스칼라 0값 생략(§1.5-1) 규칙과 대조하면 원인이 드러납니다.")
+    if symptom == 'array_category_cross':
+        return (
+            f"배열 카테고리 교차(§1.5-3 위반): 오프셋 0x{center:x} 에서 배열 원소의 "
+            f"카테고리가 바뀝니다({detail}). 실배열은 수치↔문자열↔컨테이너를 섞지 않으므로, "
+            f"앞선 원소에서 폭/경계를 잘못 읽어 정렬이 어긋난(디싱크) 강한 신호입니다.",
+            "이 오프셋보다 앞선 원소에서 폭 오독이 시작됐을 가능성이 큽니다. 배열 시작부터 "
+            "원소 경계를 되짚어 올라가세요.")
+    if symptom == 'unknown_tag':
+        return (
+            f"미지/스펙외 태그 0x{detail:02x} @ 0x{center:x}: 스펙에 없는 태그이거나, 앞선 "
+            f"필드에서 폭을 잘못 소비해 값 바이트 한가운데를 태그로 오인한 것입니다. 후자라면 "
+            f"진짜 파손 지점은 이 위치보다 앞에 있습니다.",
+            "hexdump 로 이 바이트 앞을 살펴 직전 필드가 정상적으로 닫혔는지 확인하세요. "
+            "double/float 값 속 우연한 바이트가 태그로 보이는 경우가 흔합니다.")
+    if symptom == 'checksum':
+        return (
+            f"체크섬 불일치: 끝 4바이트가 본문(base-17 롤링 해시)과 맞지 않습니다. 바이트 "
+            f"손상이나 트레일러 길이 문제일 수 있고, 구조 자체는 파싱될 수 있습니다.",
+            "구조가 정상 파싱된다면 체크섬 위치/엔디안/범위를 의심하세요. 아니라면 파일이 "
+            "손상된 것입니다.")
+    if symptom == 'parse_error':
+        return (f"파서 예외 @ 0x{center:x}: {detail}",
+                "해당 오프셋 바이트 구조를 직접 확인하세요.")
+    if symptom == 'manual':
+        return (
+            f"수동 조사 지점 0x{center:x}: 파서는 여기서 문제를 보고하지 않았습니다. 아래 "
+            f"hexdump 와 해석 후보로 이 지점 바이트의 의미를 직접 확인하세요.",
+            "이 지점 값이 기대와 다르면 직전 필드의 폭/타입을 의심하세요.")
+    return ("원인 미상.", "")
+
+
+def diagnose(raw, at=None):
+    """파싱 실패/이상 지점을 탐색하는 진단 리포트(dict).
+
+    at 이 주어지면 파서 판정과 무관하게 그 오프셋을 강제로 조사한다(수동 모드).
+    그 외에는 파서가 관측한 문제 후보들 중 '가장 앞선' 지점을 첫 파손으로 본다.
+    """
+    fmt = detect_format(raw)
+    magic_ok = raw[:4] == MAGIC
+    n = len(raw)
+
+    p = TLVParser(raw)
+    try:
+        p.parse()
+        parse_error = None
+    except Exception as e:                       # 진단은 어떤 입력에도 죽지 않아야 함
+        parse_error = f'{type(e).__name__}: {e}'
+
+    end = p.end
+    stop = p.i
+    boundary_ok = (stop >= end) if magic_ok else None
+    trailing = max(0, end - stop) if magic_ok else 0
+    checksum_ok = dd_trailer_ok(raw) if magic_ok else None
+    unknown = p.unknown
+    anomalies = p.anomalies
+
+    checks = {
+        'format': fmt,
+        'magic_ok': magic_ok,
+        'checksum_ok': checksum_ok,
+        'boundary_ok': boundary_ok,
+        'trailing_bytes': trailing,
+        'unknown_count': len(unknown),
+        'anomaly_count': len(anomalies),
+        'parse_error': parse_error,
+    }
+
+    # 문제 후보 (오프셋, 증상, detail) — 오프셋으로 정렬해 가장 앞선 것을 첫 파손으로.
+    problems = []
+    if unknown:
+        problems.append((unknown[0][1], 'unknown_tag', unknown[0][0]))
+    if anomalies:
+        off, kind, det = anomalies[0]
+        problems.append((off, kind, det))
+    if magic_ok and trailing > 0:
+        problems.append((stop, 'boundary_miss', trailing))
+    if parse_error:
+        problems.append((stop, 'parse_error', parse_error))
+    if checksum_ok is False:
+        problems.append((max(0, n - TRAILER_LEN), 'checksum', None))
+    problems.sort(key=lambda x: x[0])
+
+    ok = bool(magic_ok and checksum_ok and boundary_ok
+              and not unknown and not anomalies and not parse_error)
+
+    if at is not None:
+        center, symptom, detail = max(0, min(at, n - 1)), 'manual', None
+    elif problems:
+        center, symptom, detail = problems[0]
+    else:
+        center = symptom = detail = None
+
+    first_problem = None
+    if center is not None:
+        cause, suggestion = _explain_symptom(raw, symptom, detail, center, end)
+        first_problem = {
+            'offset': center,
+            'symptom': symptom,
+            'detail': (f'0x{detail:02x}' if symptom == 'unknown_tag' and detail is not None
+                       else detail),
+            'cause': cause,
+            'suggestion': suggestion,
+            'hexdump': hexdump(raw, center),
+            'interpretations': interpret_payload(raw[center:center + 8].hex()),
+        }
+
+    return {
+        'name': '',
+        'size': n,
+        'ok': ok,
+        'checks': checks,
+        'first_problem': first_problem,
+        'all_problems': [(o, s) for o, s, _ in problems],
+    }
+
+
+def print_diagnosis(diag, name=''):
+    nm = name or diag.get('name') or ''
+    print(f"\n{'=' * 66}\n🔎 진단: {nm}  ({diag['size']:,}B)\n{'=' * 66}")
+    c = diag['checks']
+    print(f"  판정: {'✓ 정상 (파손 신호 없음)' if diag['ok'] else '✗ 문제 감지'}")
+    line = (f"  형식={c['format']}  magic={'OK' if c['magic_ok'] else 'X'}  "
+            f"체크섬={_tri(c['checksum_ok'])}  경계={_tri(c['boundary_ok'])}")
+    if c['trailing_bytes']:
+        line += f"(남은 {c['trailing_bytes']}B)"
+    line += f"  미지태그={c['unknown_count']}  이상={c['anomaly_count']}"
+    print(line)
+    if c['parse_error']:
+        print(f"  파서예외: {c['parse_error']}")
+
+    fp = diag['first_problem']
+    if not fp:
+        print("  → 조사할 지점 없음. `--at OFFSET` 으로 임의 지점을 검사할 수 있습니다.")
+        return
+    tag = f" {fp['detail']}" if fp['detail'] not in (None, '') else ''
+    print(f"\n  ▶ 첫 파손 지점: 오프셋 0x{fp['offset']:x} ({fp['offset']})  증상={fp['symptom']}{tag}")
+    print(f"\n  원인:\n    {fp['cause']}")
+    print(f"\n  제안:\n    {fp['suggestion']}")
+    print(f"\n  주변 바이트 (>표시가 조사 지점):")
+    print(fp['hexdump'])
+    print(f"\n  이 지점 바이트 해석 후보:")
+    for k, v in fp['interpretations'].items():
+        print(f"    {k:>12} = {v}")
+    others = diag['all_problems']
+    if len(others) > 1:
+        print(f"\n  그 외 감지된 지점:")
+        for off, sym in others[1:8]:
+            print(f"    0x{off:x}  {sym}")
+
+
+def _run(args):
+    """main() 의 실제 처리부 — 모드별 분기 (--raw / TDF 경로 / 스켈레톤 등)."""
+    import json
+
+    # ── 원시 .dd 하나를 직접 파싱 ──
+    if args.raw:
+        raw = Path(args.raw).read_bytes()
+        fmt = detect_format(raw)
+        print(f"[형식 감지: {fmt}]  {args.raw}")
+        if fmt == 'text':
+            print("  (텍스트 형식 — 바이너리 TLV 파서 대상 아님. 메모장 구조 그대로)")
+            return
+        if args.diagnose or args.at is not None:
+            d = diagnose(raw, at=args.at)
+            print_diagnosis(d, name=args.raw)
+            return
+        if args.skeleton:
+            print(extract_skeleton(raw))
+            return
+        if args.closers:
+            print_closers(raw, name=args.raw)
+            return
+        res = parse_bytes(raw, name=args.raw)
+        print_result(res)
+        if args.output:
+            Path(args.output).write_text(
+                json.dumps(res, ensure_ascii=False, indent=2, default=str),
+                encoding='utf-8')
+            print(f"[JSON 저장: {args.output}]")
+        return
+
+    # ── 폴더/파일의 모든 TDF 처리 ──
+    tdfs = find_tdf_files(args.path)
+    if not tdfs:
+        print(f"TDF(.tdf) 를 찾지 못함: {args.path}")
+        return
+
+    # ── 진단 모드: TDF 내 각 .dd 를 파고들어 파손 지점 탐색 ──
+    if args.diagnose or args.at is not None:
+        for tdf in tdfs:
+            if not zipfile.is_zipfile(tdf):
+                continue
+            with zipfile.ZipFile(tdf, 'r') as zf:
+                for nm in zf.namelist():
+                    if not nm.endswith('.dd'):
+                        continue
+                    if args.dd and args.dd not in nm:
+                        continue
+                    d = diagnose(zf.read(nm), at=args.at)
+                    print_diagnosis(d, name=f'{tdf}::{nm}')
+        return
+
+    all_results = []
+    for tdf in tdfs:
+        results = process_tdf(tdf, dd_filter=args.dd, verbose=not args.quiet
+                              and not args.discover)
+        all_results.extend(results)
+        if args.per_tdf_json:
+            out = Path(tdf).with_suffix('.json')
+            out.write_text(json.dumps(results, ensure_ascii=False, indent=2,
+                                      default=str), encoding='utf-8')
+            print(f"[JSON 저장: {out}]")
+
+    if args.discover:
+        report = build_discovery_report(all_results)
+        print_discovery_report(report)
+        if args.discover_json:
+            Path(args.discover_json).write_text(
+                json.dumps(report, ensure_ascii=False, indent=2, default=str),
+                encoding='utf-8')
+            print(f"[발굴 리포트 저장: {args.discover_json}]")
+
+    if args.output:
+        Path(args.output).write_text(
+            json.dumps(all_results, ensure_ascii=False, indent=2, default=str),
+            encoding='utf-8')
+        print(f"\n[통합 JSON 저장: {args.output}  ({len(all_results)}개 .dd)]")
+
+
 def main():
     import argparse
     ap = argparse.ArgumentParser(
@@ -654,6 +995,12 @@ def main():
                     help='구조({ [ , key)만 복원하고 값은 placeholder 로 남긴 스켈레톤 출력')
     ap.add_argument('--closers', action='store_true',
                     help='닫는 마커 후보 탐지(값 끝~다음 키 사이 갭 바이트 분포)')
+    ap.add_argument('--diagnose', action='store_true',
+                    help='파싱 실패/이상 지점 진단: 첫 파손 위치 + 원인(4 디싱크 신호) '
+                         '+ 주변 hexdump + 바이트 다중해석')
+    ap.add_argument('--at', type=lambda s: int(s, 0), metavar='OFFSET',
+                    help='진단 창을 강제할 바이트 오프셋(수동 조사 — 파서가 성공 판정이어도 '
+                         '동작). 10진수 또는 0x 접두 16진수 허용')
     ap.add_argument('-s', '--save',
                     help='화면 출력 전체를 텍스트 파일로도 저장(스켈레톤/닫는마커 결과 포함)')
     args = ap.parse_args()
@@ -672,3 +1019,7 @@ def main():
             print(f"\n출력 저장 완료: {Path(args.save).resolve()}")
             sys.stdout = sys.stdout.stream
             _logfile.close()
+
+
+if __name__ == '__main__':
+    main()
