@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>.dd 파일 — 이렇게 읽는다</title>
+</head>
+<body style="margin:0;padding:14px 16px;background:#ffffff;color:#111827;font-family:-apple-system,'Segoe UI','Malgun Gothic',sans-serif">
+
+<!-- ===== 헤더 ===== -->
+<div style="border-bottom:2px solid #111827;padding-bottom:8px;margin-bottom:11px">
+  <div style="font:700 20px/1.2 -apple-system,'Segoe UI','Malgun Gothic',sans-serif;color:#111827">.dd 파일 — 이렇게 읽는다</div>
+  <div style="font:13px/1.5 -apple-system,'Segoe UI','Malgun Gothic',sans-serif;color:#4b5563;margin-top:4px">
+    바이너리 TLV. <b>칸 하나 = 바이트 하나</b>, 색은 역할입니다. 태그가 폭을 정하고, 컨테이너는 <b>END(00)</b> 로 닫힙니다.
+    모든 다바이트 수치는 <b>big-endian</b>.
+  </div>
+  <div style="margin-top:6px;font:11.5px/1.7 -apple-system,'Segoe UI','Malgun Gothic',sans-serif;color:#4b5563">
+    <span style="border:1px solid #d1d5db;background:#f3f4f6;color:#6b7280;border-radius:3px;padding:2px 7px;margin-right:5px">매직 / 트레일러</span>
+    <span style="border:1px solid #d8c9fb;background:#f3eeff;color:#7c3aed;border-radius:3px;padding:2px 7px;margin-right:5px">Type 09</span>
+    <span style="border:1px solid #a9dfe9;background:#e8f7fa;color:#0e7490;border-radius:3px;padding:2px 7px;margin-right:5px">이름</span>
+    <span style="border:1px solid #f0d09a;background:#fdf3e3;color:#b45309;border-radius:3px;padding:2px 7px;margin-right:5px">SubType</span>
+    <span style="border:1px solid #a3ddc8;background:#e7f7f1;color:#047857;border-radius:3px;padding:2px 7px;margin-right:5px">값</span>
+    <span style="border:1px solid #b8caf8;background:#e9efff;color:#1d4ed8;border-radius:3px;padding:2px 7px;margin-right:5px">컨테이너</span>
+    <span style="border:1px solid #f2b8b8;background:#fdeaea;color:#b91c1c;border-radius:3px;padding:2px 7px">END 00</span>
+  </div>
+</div>
+
+<!-- ===== 본문 2단 ===== -->
+<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse"><tr>
+
+<!-- ---------- 왼쪽 단 : 바이트가 어떻게 생겼나 ---------- -->
+<td width="50%" valign="top" style="padding-right:14px;vertical-align:top">
+
+  <!-- 01 파일 프레임 -->
+  <div style="font:700 13.5px -apple-system,'Segoe UI','Malgun Gothic',sans-serif;color:#111827;margin-bottom:6px">
+    <span style="color:#9ca3af">01</span> &nbsp;파일 프레임
+  </div>
+  <div style="border:1px solid #e5e7eb;background:#fafafa;border-radius:6px;padding:9px 11px">
+    <table cellpadding="0" cellspacing="0" style="border-collapse:separate;border-spacing:3px 0"><tr>
+      <td style="border:1px solid #d1d5db;background:#f3f4f6;color:#6b7280;font:600 11px ui-monospace,Consolas,monospace;padding:4px 5px;text-align:center;border-radius:3px">17</td>
+      <td style="border:1px solid #d1d5db;background:#f3f4f6;color:#6b7280;font:600 11px ui-monospace,Consolas,monospace;padding:4px 5px;text-align:center;border-radius:3px">FA</td>
+      <td style="border:1px solid #d1d5db;background:#f3f4f6;color:#6b7280;font:600 11px ui-monospace,Consolas,monospace;padding:4px 5px;text-align:center;border-radius:3px">AE</td>
+      <td style="border:1px solid #d1d5db;background:#f3f4f6;color:#6b7280;font:600 11px ui-monospace,Consolas,monospace;padding:4px 5px;text-align:center;border-radius:3px">4E</td>
+      <td style="border:1px solid #b8caf8;background:#e9efff;color:#1d4ed8;font:600 11px ui-monospace,Consolas,monospace;padding:4px 5px;text-align:center;border-radius:3px">0B</td>
+      <td style="border:1px dashed #d1d5db;background:#ffffff;color:#9ca3af;font:11px ui-monospace,Consolas,monospace;padding:4px 10px;text-align:center;border-radius:3px">… 필드들 반복 …</td>
+      <td style="border:1px solid #f2b8b8;background:#fdeaea;color:#b91c1c;font:600 11px ui-monospace,Consolas,monospace;padding:4px 5px;text-align:center;border-radius:3px">00</td>
+      <td style="border:1px solid #d1d5db;background:#f3f4f6;color:#6b7280;font:600 11px ui-monospace,Consolas,monospace;padding:4px 5px;text-align:center;border-radius:3px">BC</td>
+      <td style="border:1px solid #d1d5db;background:#f3f4f6;color:#6b7280;font:600 11px ui-monospace,Consolas,monospace;padding:4px 5px;text-align:center;border-radius:3px">94</td>
+      <td style="border:1px solid #d1d5db;background:#f3f4f6;color:#6b7280;font:600 11px ui-monospace,Consolas,monospace;padding:4px 5px;text-align:center;border-radius:3px">26</td>
+      <td style="border:1px solid #d1d5db;background:#f3f4f6;color:#6b7280;font:600 11px ui-monospace,Consolas,monospace;padding:4px 5px;text-align:center;border-radius:3px">A8</td>
+    </tr><tr>
+      <td colspan="4" style="font:11px -apple-system,'Segoe UI','Malgun Gothic',sans-serif;color:#6b7280;text-align:center;padding-top:4px">MAGIC 4B</td>
+      <td style="font:11px -apple-system,'Segoe UI','Malgun Gothic',sans-serif;color:#1d4ed8;text-align:center;padding-top:4px">열기</td>
+      <td style="font:11px -apple-system,'Segoe UI','Malgun Gothic',sans-serif;color:#6b7280;text-align:center;padding-top:4px">최상위 STRUCT 본문</td>
+      <td style="font:11px -apple-system,'Segoe UI','Malgun Gothic',sans-serif;color:#b91c1c;text-align:center;padding-top:4px">닫기</td>
+      <td colspan="4" style="font:11px -apple-system,'Segoe UI','Malgun Gothic',sans-serif;color:#6b7280;text-align:center;padding-top:4px">TRAILER 4B</td>
+    </tr></table>
+  </div>
+  <div style="font:12px/1.5 -apple-system,'Segoe UI','Malgun Gothic',sans-serif;color:#4b5563;margin:6px 0 15px">
+    파싱 전에 <b>끝 4바이트를 먼저 떼어낸다</b> — 트레일러는 구조가 아니라 체크섬. 구조 영역은 <code style="font-family:ui-monospace,Consolas,monospace;background:#f3f4f6;padding:1px 4px;border-radius:3px">raw[4 : n-4]</code> 뿐이다.
+  </div>
+
+  <!-- 02 필드 하나 -->
+  <div style="font:700 13.5px -apple-system,'Segoe UI','Malgun Gothic',sans-serif;color:#111827;margin-bottom:6px">
+    <span style="color:#9ca3af">02</span> &nbsp;필드 하나 = 네 조각
+  </div>
+  <div style="border:1px solid #e5e7eb;background:#fafafa;border-radius:6px;padding:9px 11px">
+    <table cellpadding="0" cellspacing="0" style="border-collapse:separate;border-spacing:3px 0"><tr>
+      <td style="border:1px solid #d8c9fb;background:#f3eeff;color:#7c3aed;font:600 11px ui-monospace,Consolas,monospace;padding:4px 5px;text-align:center;border-radius:3px">09</td>
+      <td style="border:1px solid #a9dfe9;background:#e8f7fa;color:#0e7490;font:600 11px ui-monospace,Consolas,monospace;padding:4px 9px;text-align:center;border-radius:3px">"lens_magnification"</td>
+      <td style="border:1px solid #a9dfe9;background:#e8f7fa;color:#0e7490;font:600 11px ui-monospace,Consolas,monospace;padding:4px 5px;text-align:center;border-radius:3px">00</td>
+      <td style="border:1px solid #f0d09a;background:#fdf3e3;color:#b45309;font:600 11px ui-monospace,Consolas,monospace;padding:4px 5px;text-align:center;border-radius:3px">08</td>
+      <td style="border:1px solid #a3ddc8;background:#e7f7f1;color:#047857;font:600 11px ui-monospace,Consolas,monospace;padding:4px 8px;text-align:center;border-radius:3px">3F D0 00 00 00 00 00 00</td>
+    </tr><tr>
+      <td style="font:11px -apple-system,'Segoe UI','Malgun Gothic',sans-serif;color:#7c3aed;text-align:center;padding-top:4px">Type</td>
+      <td style="font:11px -apple-system,'Segoe UI','Malgun Gothic',sans-serif;color:#0e7490;text-align:center;padding-top:4px">이름 (ASCII)</td>
+      <td style="font:11px -apple-system,'Segoe UI','Malgun Gothic',sans-serif;color:#0e7490;text-align:center;padding-top:4px">NUL</td>
+      <td style="font:11px -apple-system,'Segoe UI','Malgun Gothic',sans-serif;color:#b45309;text-align:center;padding-top:4px">SubType 1B</td>
+      <td style="font:11px -apple-system,'Segoe UI','Malgun Gothic',sans-serif;color:#047857;text-align:center;padding-top:4px">값 = 0.25 (float64)</td>
+    </tr></table>
+  </div>
+  <div style="font:12px/1.5 -apple-system,'Segoe UI','Malgun Gothic',sans-serif;color:#4b5563;margin:6px 0 15px">
+    이름 있는 필드는 <b>항상 <code style="font-family:ui-monospace,Consolas,monospace;background:#f3f4f6;padding:1px 4px;border-radius:3px">09</code> 로 시작</b>. SubType 자리의
+    <code style="font-family:ui-monospace,Consolas,monospace;background:#f3f4f6;padding:1px 4px;border-radius:3px">09</code> 는 "값이 문자열"이라는 뜻 — 같은 바이트지만 <b>위치가 역할을 정한다</b>.
+  </div>
+
+  <!-- 03 중첩 -->
+  <div style="font:700 13.5px -apple-system,'Segoe UI','Malgun Gothic',sans-serif;color:#111827;margin-bottom:6px">
+    <span style="color:#9ca3af">03</span> &nbsp;중첩 — 여는 태그와 END 는 짝 <span style="font-weight:400;color:#6b7280;font-size:11.5px">(실측 예제)</span>
+  </div>
+  <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse"><tr>
+    <td width="62%" valign="top" style="vertical-align:top;padding-right:9px">
+      <pre style="margin:0;border:1px solid #e5e7eb;background:#fafafa;border-radius:6px;padding:9px 11px;font:11px/1.6 ui-monospace,Consolas,monospace;color:#374151;overflow-x:auto"><span style="color:#1d4ed8;font-weight:600">0B</span> <span style="color:#7c3aed;font-weight:600">09</span> <span style="color:#0e7490">"IFEUCM_..._struct"</span> <span style="color:#0e7490">00</span>
+  <span style="color:#1d4ed8;font-weight:600">0B</span> <span style="color:#7c3aed;font-weight:600">09</span> <span style="color:#0e7490">"lens_magnification"</span> <span style="color:#0e7490">00</span> <span style="color:#b45309;font-weight:600">08</span> <span style="color:#047857">3F D0 00 …</span>
+     <span style="color:#7c3aed;font-weight:600">09</span> <span style="color:#0e7490">"if_sim_mode"</span> <span style="color:#0e7490">00</span> <span style="color:#b45309;font-weight:600">09</span> <span style="color:#047857">"SIM_DISABLED" 00</span>
+     <span style="color:#7c3aed;font-weight:600">09</span> <span style="color:#0e7490">"hw_timestamp_tx"</span> <span style="color:#0e7490">00</span> <span style="color:#b45309;font-weight:600">09</span> <span style="color:#047857">"TRUE" 00</span>
+  <span style="color:#b91c1c;font-weight:600">00</span>  <span style="color:#9ca3af">← 안쪽 STRUCT 닫기</span>
+<span style="color:#b91c1c;font-weight:600">00</span>  <span style="color:#9ca3af">← 최상위 닫기</span></pre>
+    </td>
+    <td width="38%" valign="top" style="vertical-align:top">
+      <pre style="margin:0;border:1px solid #e5e7eb;background:#f6fbf9;border-radius:6px;padding:9px 11px;font:11px/1.6 ui-monospace,Consolas,monospace;color:#374151;overflow-x:auto">{ <span style="color:#0e7490">"IFEUCM_…"</span>: {
+    <span style="color:#0e7490">"lens_magnification"</span>: <span style="color:#047857">0.25</span>,
+    <span style="color:#0e7490">"if_sim_mode"</span>: <span style="color:#047857">"SIM_DISABLED"</span>,
+    <span style="color:#0e7490">"hw_timestamp_tx"</span>: <span style="color:#047857">"TRUE"</span>
+} }</pre>
+    </td>
+  </tr></table>
+  <div style="font:12px/1.5 -apple-system,'Segoe UI','Malgun Gothic',sans-serif;color:#4b5563;margin:6px 0 15px">
+    STRUCT/ARRAY 는 <b>값 자리에 자식들을 담고</b> END 로 닫는다. 들여쓰기가 곧 깊이 — 길이 필드는 없다.
+  </div>
+
+  <!-- 04 배열 -->
+  <div style="font:700 13.5px -apple-system,'Segoe UI','Malgun Gothic',sans-serif;color:#111827;margin-bottom:6px">
+    <span style="color:#9ca3af">04</span> &nbsp;배열 원소 — 이름 없이 <span style="font-family:ui-monospace,Consolas,monospace">SubType+값</span> 반복
+  </div>
+  <div style="border:1px solid #e5e7eb;background:#fafafa;border-radius:6px;padding:9px 11px">
+    <table cellpadding="0" cellspacing="0" style="border-collapse:separate;border-spacing:3px 0"><tr>
+      <td style="border:1px solid #d8c9fb;background:#f3eeff;color:#7c3aed;font:600 11px ui-monospace,Consolas,monospace;padding:4px 5px;text-align:center;border-radius:3px">09</td>
+      <td style="border:1px solid #a9dfe9;background:#e8f7fa;color:#0e7490;font:600 11px ui-monospace,Consolas,monospace;padding:4px 7px;text-align:center;border-radius:3px">"es_values" 00</td>
+      <td style="border:1px solid #b8caf8;background:#e9efff;color:#1d4ed8;font:600 11px ui-monospace,Consolas,monospace;padding:4px 5px;text-align:center;border-radius:3px">0A</td>
+      <td style="border:1px solid #f0d09a;background:#fdf3e3;color:#b45309;font:600 11px ui-monospace,Consolas,monospace;padding:4px 5px;text-align:center;border-radius:3px">05</td>
+      <td style="border:1px solid #a3ddc8;background:#e7f7f1;color:#047857;font:600 11px ui-monospace,Consolas,monospace;padding:4px 6px;text-align:center;border-radius:3px">23 3D</td>
+      <td style="border:1px solid #f0d09a;background:#fdf3e3;color:#b45309;font:600 11px ui-monospace,Consolas,monospace;padding:4px 5px;text-align:center;border-radius:3px">02</td>
+      <td style="border:1px solid #f0d09a;background:#fdf3e3;color:#b45309;font:600 11px ui-monospace,Consolas,monospace;padding:4px 5px;text-align:center;border-radius:3px">05</td>
+      <td style="border:1px solid #a3ddc8;background:#e7f7f1;color:#047857;font:600 11px ui-monospace,Consolas,monospace;padding:4px 6px;text-align:center;border-radius:3px">19 19</td>
+      <td style="border:1px dashed #d1d5db;background:#ffffff;color:#9ca3af;font:11px ui-monospace,Consolas,monospace;padding:4px 6px;text-align:center;border-radius:3px">…</td>
+      <td style="border:1px solid #f2b8b8;background:#fdeaea;color:#b91c1c;font:600 11px ui-monospace,Consolas,monospace;padding:4px 5px;text-align:center;border-radius:3px">00</td>
+    </tr><tr>
+      <td colspan="2" style="font:11px -apple-system,'Segoe UI','Malgun Gothic',sans-serif;color:#0e7490;text-align:center;padding-top:4px">필드 이름</td>
+      <td style="font:11px -apple-system,'Segoe UI','Malgun Gothic',sans-serif;color:#1d4ed8;text-align:center;padding-top:4px">ARRAY</td>
+      <td colspan="2" style="font:11px -apple-system,'Segoe UI','Malgun Gothic',sans-serif;color:#4b5563;text-align:center;padding-top:4px">9021</td>
+      <td style="font:11px -apple-system,'Segoe UI','Malgun Gothic',sans-serif;color:#b45309;text-align:center;padding-top:4px"><b>0</b></td>
+      <td colspan="2" style="font:11px -apple-system,'Segoe UI','Malgun Gothic',sans-serif;color:#4b5563;text-align:center;padding-top:4px">6425</td>
+      <td style="font:11px -apple-system,'Segoe UI','Malgun Gothic',sans-serif;color:#9ca3af;text-align:center;padding-top:4px">반복</td>
+      <td style="font:11px -apple-system,'Segoe UI','Malgun Gothic',sans-serif;color:#b91c1c;text-align:center;padding-top:4px">닫기</td>
+    </tr></table>
+  </div>
+  <div style="font:12px/1.5 -apple-system,'Segoe UI','Malgun Gothic',sans-serif;color:#4b5563;margin:6px 0 0">
+    원소는 <b>이름이 없고</b>, 각자의 태그로 폭이 정해지므로 폭이 섞여도 결정적이다 (int8 → 128↑ 는 enum 으로 승격).
+    예외는 <code style="font-family:ui-monospace,Consolas,monospace;background:#f3f4f6;padding:1px 4px;border-radius:3px">09</code> 원소 하나 —
+    이름 NUL <b>직후 바이트</b>가 <code style="font-family:ui-monospace,Consolas,monospace;background:#f3f4f6;padding:1px 4px;border-radius:3px">0A/0B</code> 면 <b>이름+컨테이너</b> 원소, 아니면 <b>맨 문자열 값</b>.
+  </div>
+
+</td>
+
+<!-- ---------- 오른쪽 단 : 어떻게 소비하나 ---------- -->
+<td width="50%" valign="top" style="vertical-align:top;border-left:1px solid #e5e7eb;padding-left:14px">
+
+  <!-- 05 폭 사다리 -->
+  <div style="font:700 13.5px -apple-system,'Segoe UI','Malgun Gothic',sans-serif;color:#111827;margin-bottom:6px">
+    <span style="color:#9ca3af">05</span> &nbsp;SubType = <b>폭 사다리</b>
+  </div>
+  <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font:12px -apple-system,'Segoe UI','Malgun Gothic',sans-serif">
+    <tr style="background:#f3f4f6">
+      <th align="left" style="padding:4px 6px;border:1px solid #e5e7eb;color:#374151;font-weight:700;width:56px">태그</th>
+      <th align="left" style="padding:4px 6px;border:1px solid #e5e7eb;color:#374151;font-weight:700;width:52px">폭</th>
+      <th align="left" style="padding:4px 6px;border:1px solid #e5e7eb;color:#374151;font-weight:700">읽는 법</th>
+    </tr>
+    <tr><td style="padding:3px 8px;border:1px solid #e5e7eb;font-family:ui-monospace,Consolas,monospace;color:#b91c1c;font-weight:600">00</td><td style="padding:3px 8px;border:1px solid #e5e7eb;color:#6b7280">—</td><td style="padding:3px 8px;border:1px solid #e5e7eb;color:#374151">END — 컨테이너 닫기</td></tr>
+    <tr><td style="padding:3px 8px;border:1px solid #e5e7eb;font-family:ui-monospace,Consolas,monospace;color:#b45309;font-weight:600">01</td><td style="padding:3px 8px;border:1px solid #e5e7eb;color:#374151">1B</td><td style="padding:3px 8px;border:1px solid #e5e7eb;color:#374151">int8 (희소)</td></tr>
+    <tr style="background:#fdf8ee"><td style="padding:3px 8px;border:1px solid #e5e7eb;font-family:ui-monospace,Consolas,monospace;color:#b45309;font-weight:600">02 / 03</td><td style="padding:3px 8px;border:1px solid #e5e7eb;color:#b45309;font-weight:700">0B</td><td style="padding:3px 8px;border:1px solid #e5e7eb;color:#374151"><b>값 0 — payload 없음</b> (실측 652/652)</td></tr>
+    <tr><td style="padding:3px 8px;border:1px solid #e5e7eb;font-family:ui-monospace,Consolas,monospace;color:#b45309;font-weight:600">04</td><td style="padding:3px 8px;border:1px solid #e5e7eb;color:#374151">1B</td><td style="padding:3px 8px;border:1px solid #e5e7eb;color:#374151">int8 — <b>진짜 int8 값은 여기</b></td></tr>
+    <tr><td style="padding:3px 8px;border:1px solid #e5e7eb;font-family:ui-monospace,Consolas,monospace;color:#b45309;font-weight:600">05</td><td style="padding:3px 8px;border:1px solid #e5e7eb;color:#374151">2B</td><td style="padding:3px 8px;border:1px solid #e5e7eb;color:#374151">int16</td></tr>
+    <tr><td style="padding:3px 8px;border:1px solid #e5e7eb;font-family:ui-monospace,Consolas,monospace;color:#b45309;font-weight:600">06</td><td style="padding:3px 8px;border:1px solid #e5e7eb;color:#374151">4B</td><td style="padding:3px 8px;border:1px solid #e5e7eb;color:#374151">int32 — "BOOL" 이란 이름은 유물</td></tr>
+    <tr><td style="padding:3px 8px;border:1px solid #e5e7eb;font-family:ui-monospace,Consolas,monospace;color:#b45309;font-weight:600">07 / 08</td><td style="padding:3px 8px;border:1px solid #e5e7eb;color:#374151">4B / 8B</td><td style="padding:3px 8px;border:1px solid #e5e7eb;color:#374151">IEEE754 float (08 이 가장 흔함)</td></tr>
+    <tr><td style="padding:3px 8px;border:1px solid #e5e7eb;font-family:ui-monospace,Consolas,monospace;color:#047857;font-weight:600">09</td><td style="padding:3px 8px;border:1px solid #e5e7eb;color:#374151">가변</td><td style="padding:3px 8px;border:1px solid #e5e7eb;color:#374151">문자열 — <code style="font-family:ui-monospace,Consolas,monospace">00</code> 까지</td></tr>
+    <tr><td style="padding:3px 8px;border:1px solid #e5e7eb;font-family:ui-monospace,Consolas,monospace;color:#1d4ed8;font-weight:600">0A / 0B</td><td style="padding:3px 8px;border:1px solid #e5e7eb;color:#374151">가변</td><td style="padding:3px 8px;border:1px solid #e5e7eb;color:#374151">ARRAY / STRUCT — <code style="font-family:ui-monospace,Consolas,monospace">00</code> 으로 닫힘</td></tr>
+  </table>
+  <div style="border-left:3px solid #7c3aed;background:#f8f5ff;padding:8px 11px;margin:9px 0 15px;font:12px/1.6 -apple-system,'Segoe UI','Malgun Gothic',sans-serif;color:#374151">
+    <b style="color:#6d28d9">이게 전부의 핵심</b> — 태그는 <b>타입이 아니라 폭</b>이다. 인코더는 값이 들어가는 <b>최소 폭</b>을 고르고,
+    <b>값이 0이면 폭도 0</b>이라 payload 자체가 없다. 같은 <code style="font-family:ui-monospace,Consolas,monospace">count</code> 필드가
+    값에 따라 <code style="font-family:ui-monospace,Consolas,monospace">02</code>(=0) → <code style="font-family:ui-monospace,Consolas,monospace">04 05</code>(=5) →
+    <code style="font-family:ui-monospace,Consolas,monospace">05 01 2C</code>(=300) 로 태그가 바뀐다.
+  </div>
+
+  <!-- 06 파싱 루프 -->
+  <div style="font:700 13.5px -apple-system,'Segoe UI','Malgun Gothic',sans-serif;color:#111827;margin-bottom:6px">
+    <span style="color:#9ca3af">06</span> &nbsp;파싱 루프 — 이게 디코더 전부
+  </div>
+  <pre style="margin:0;border:1px solid #e5e7eb;background:#fafafa;border-radius:6px;padding:9px 11px;font:11px/1.55 ui-monospace,Consolas,monospace;color:#374151;overflow-x:auto">body, trailer = raw[<span style="color:#047857">4</span>:<span style="color:#047857">-4</span>], raw[<span style="color:#047857">-4</span>:]   <span style="color:#9ca3af"># 틀 먼저 벗기기</span>
+
+<span style="color:#7c3aed;font-weight:600">def</span> read_members(p):               <span style="color:#9ca3af"># 컨테이너 하나</span>
+    <span style="color:#7c3aed;font-weight:600">while</span> body[p] != <span style="color:#047857">0x00</span>:         <span style="color:#9ca3af"># END 면 닫는다</span>
+        p, name = read_name(p)      <span style="color:#9ca3af"># 09 + 식별자 + 00</span>
+        st = body[p]; p += <span style="color:#047857">1</span>         <span style="color:#9ca3af"># SubType 1B</span>
+        p, out[name] = read_value(p, st)
+    <span style="color:#7c3aed;font-weight:600">return</span> p + <span style="color:#047857">1</span>
+
+<span style="color:#7c3aed;font-weight:600">def</span> read_value(p, st):
+    <span style="color:#9ca3af"># 값 0 = 폭 0 → payload 가 아예 없다</span>
+    <span style="color:#7c3aed;font-weight:600">if</span> KEY_ANCHOR.match(body, p):     <span style="color:#7c3aed;font-weight:600">return</span> p, <span style="color:#047857">0</span>
+    <span style="color:#7c3aed;font-weight:600">if</span> body[p]==<span style="color:#047857">0x00</span> <span style="color:#7c3aed;font-weight:600">and</span> st&lt;=<span style="color:#047857">0x04</span>: <span style="color:#7c3aed;font-weight:600">return</span> p, <span style="color:#047857">0</span>
+    <span style="color:#7c3aed;font-weight:600">if</span> st <span style="color:#7c3aed;font-weight:600">in</span> (<span style="color:#047857">0x0A</span>,<span style="color:#047857">0x0B</span>): <span style="color:#7c3aed;font-weight:600">return</span> read_container(p,st)
+    w = WIDTH[st]                     <span style="color:#9ca3af"># 위 폭 사다리</span>
+    <span style="color:#7c3aed;font-weight:600">return</span> p+w, decode_be(body[p:p+w])  <span style="color:#9ca3af"># big-endian</span></pre>
+  <div style="font:11.5px/1.5 -apple-system,'Segoe UI','Malgun Gothic',sans-serif;color:#4b5563;margin:6px 0 0">
+    앵커 <code style="font-family:ui-monospace,Consolas,monospace;background:#f3f4f6;padding:1px 3px;border-radius:3px">/\x09[A-Za-z_][A-Za-z0-9_.\-]{0,63}\x00/</code> 로 "다음 필드가 시작됐나"를 본다.
+    <b>이 두 줄이 빠지면 디싱크</b> — 뒤 필드가 통째로 사라진다. 2B 이상 태그에 END 검사를 안 하는 건 float 첫 바이트가 <code style="font-family:ui-monospace,Consolas,monospace">00</code> 일 수 있어서.
+  </div>
+
+</td>
+</tr></table>
+
+<!-- ===== 푸터 ===== -->
+<div style="border-top:1px solid #e5e7eb;margin-top:10px;padding-top:7px;font:11.5px/1.6 -apple-system,'Segoe UI','Malgun Gothic',sans-serif;color:#6b7280">
+  <b style="color:#374151">트레일러 4B</b> = base-17 롤링 해시 <code style="font-family:ui-monospace,Consolas,monospace;background:#f3f4f6;padding:1px 4px;border-radius:3px">h = (h*17 + byte) &amp; 0xFFFFFFFF</code> (CRC 아님)
+  &nbsp;·&nbsp; <code style="font-family:ui-monospace,Consolas,monospace;background:#f3f4f6;padding:1px 4px;border-radius:3px">python3 dd_main.py &lt;folder|.tdf&gt;</code>
+  &nbsp;·&nbsp; 검증 — 실코퍼스 <b>605개 전부 유일해</b>(백트래킹 전수 탐색) · <b>1255개</b> 전부 경계까지 완주
+  &nbsp;·&nbsp; 예외·증명·반례는 <b>byte_structure.html</b>
+</div>
+
+</body>
+</html>
